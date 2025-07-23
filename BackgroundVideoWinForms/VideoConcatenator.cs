@@ -6,7 +6,7 @@ namespace BackgroundVideoWinForms
 {
     public class VideoConcatenator
     {
-        public void Concatenate(List<string> inputFiles, string outputFile, string resolution)
+        public void Concatenate(List<string> inputFiles, string outputFile, string resolution, System.Action<string> progressCallback)
         {
             string tempListFile = Path.Combine(Path.GetTempPath(), $"pexels_concat_{System.Guid.NewGuid()}.txt");
             using (var sw = new StreamWriter(tempListFile))
@@ -27,6 +27,24 @@ namespace BackgroundVideoWinForms
             };
             using (var process = Process.Start(psi))
             {
+                process.ErrorDataReceived += (s, e) =>
+                {
+                    if (e.Data != null && progressCallback != null)
+                    {
+                        var line = e.Data;
+                        var idx = line.IndexOf("time=");
+                        if (idx >= 0)
+                        {
+                            // Extract time=00:00:12.34
+                            var timePart = line.Substring(idx + 5);
+                            var spaceIdx = timePart.IndexOf(' ');
+                            if (spaceIdx > 0)
+                                timePart = timePart.Substring(0, spaceIdx);
+                            progressCallback(timePart);
+                        }
+                    }
+                };
+                process.BeginErrorReadLine();
                 process.WaitForExit();
             }
             try { File.Delete(tempListFile); } catch { }

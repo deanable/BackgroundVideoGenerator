@@ -84,7 +84,11 @@ namespace BackgroundVideoWinForms
             progressBar.Style = ProgressBarStyle.Marquee;
             string safeSearchTerm = string.Join("_", searchTerm.Split(Path.GetInvalidFileNameChars()));
             string outputFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"{safeSearchTerm}_{System.DateTime.Now:yyyyMMddHHmmss}.mp4");
-            await Task.Run(() => videoConcatenator.Concatenate(downloadedFiles, outputFile, resolution));
+            await Task.Run(() => videoConcatenator.Concatenate(downloadedFiles, outputFile, resolution, (progress) => {
+                labelStatus.Invoke((System.Action)(() => {
+                    labelStatus.Text = $"Encoding: {progress}";
+                }));
+            }));
 
             // Cleanup temp files
             foreach (var file in downloadedFiles)
@@ -113,7 +117,6 @@ namespace BackgroundVideoWinForms
                 progressBar.Maximum = System.Math.Min(clips.Count, 20); // Cap at 20 clips for sanity
                 progressBar.Value = 0;
             }));
-            // Determine target width/height from selected resolution
             int targetWidth = 1280, targetHeight = 720;
             if (radioButton1080p.Checked) { targetWidth = 1920; targetHeight = 1080; }
             else if (radioButton480p.Checked) { targetWidth = 854; targetHeight = 480; }
@@ -121,29 +124,28 @@ namespace BackgroundVideoWinForms
             var tasks = new List<Task<string>>();
             var progressLock = new object();
             int completed = 0;
-            int clipsToProcess = 0;
             int accumulatedDuration = 0;
-            // Select enough clips to cover the duration, up to 20
+            var selectedClips = new List<PexelsVideoClip>();
             foreach (var clip in clips)
             {
-                if (accumulatedDuration >= totalDuration || clipsToProcess >= 20)
+                if (accumulatedDuration >= totalDuration || selectedClips.Count >= 20)
                     break;
                 accumulatedDuration += clip.Duration;
-                clipsToProcess++;
+                selectedClips.Add(clip);
             }
+            int clipsToProcess = selectedClips.Count;
             for (int i = 0; i < clipsToProcess; i++)
             {
-                var clip = clips[i];
+                var clip = selectedClips[i];
                 string fileName = Path.Combine(tempDir, $"clip_{i}.mp4");
                 var task = Task.Run(async () =>
                 {
                     try
                     {
                         labelStatus.Invoke((System.Action)(() => {
-                            labelStatus.Text = $"Downloading clip {i + 1} of {clipsToProcess}...";
+                            labelStatus.Text = $"Downloading clip {completed + 1} of {clipsToProcess}...";
                         }));
                         await videoDownloader.DownloadAsync(clip, fileName);
-                        // Normalize aspect ratio if needed
                         bool needsNormalization = true;
                         (int w, int h) = videoNormalizer.ProbeDimensions(fileName);
                         if (w > 0 && h > 0 && w * targetHeight == h * targetWidth)
@@ -151,7 +153,7 @@ namespace BackgroundVideoWinForms
                         if (needsNormalization)
                         {
                             labelStatus.Invoke((System.Action)(() => {
-                                labelStatus.Text = $"Normalizing clip {i + 1} of {clipsToProcess}...";
+                                labelStatus.Text = $"Normalizing clip {completed + 1} of {clipsToProcess}...";
                             }));
                             string normFile = Path.Combine(tempDir, $"clip_{i}_norm.mp4");
                             videoNormalizer.Normalize(fileName, normFile, targetWidth, targetHeight);
