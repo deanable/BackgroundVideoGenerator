@@ -13,24 +13,17 @@ namespace BackgroundVideoWinForms
 {
     public partial class Form1 : Form
     {
+        private PexelsService pexelsService = new PexelsService();
+        private VideoDownloader videoDownloader = new VideoDownloader();
+        private VideoNormalizer videoNormalizer = new VideoNormalizer();
+        private VideoConcatenator videoConcatenator = new VideoConcatenator();
+
         public Form1()
         {
             InitializeComponent();
             labelStatus.Text = "";
             // Load API key from registry
-            try
-            {
-                using (var key = Registry.CurrentUser.OpenSubKey(REGISTRY_PATH))
-                {
-                    if (key != null)
-                    {
-                        var value = key.GetValue(REGISTRY_APIKEY) as string;
-                        if (!string.IsNullOrEmpty(value))
-                            textBoxApiKey.Text = value;
-                    }
-                }
-            }
-            catch { }
+            textBoxApiKey.Text = RegistryHelper.LoadApiKey();
             textBoxApiKey.Leave += textBoxApiKey_Leave;
         }
 
@@ -51,7 +44,6 @@ namespace BackgroundVideoWinForms
                 MessageBox.Show("Please enter your Pexels API key.");
                 return;
             }
-
             if (string.IsNullOrWhiteSpace(searchTerm))
             {
                 MessageBox.Show("Please enter a search term.");
@@ -63,7 +55,7 @@ namespace BackgroundVideoWinForms
             buttonStart.Enabled = false;
 
             // 1. Query Pexels API for video clips matching searchTerm
-            var clips = await SearchPexelsVideosAsync(searchTerm, apiKey);
+            var clips = await pexelsService.SearchVideosAsync(searchTerm, apiKey);
             if (clips == null || clips.Count == 0)
             {
                 MessageBox.Show("No videos found for the search term.");
@@ -73,11 +65,11 @@ namespace BackgroundVideoWinForms
                 return;
             }
 
-            // 2. Download enough clips to cover 'duration' seconds
-            labelStatus.Text = "Downloading video clips...";
+            // 2. Download and normalize enough clips to cover 'duration' seconds
+            labelStatus.Text = "Downloading and normalizing video clips...";
             progressBar.Style = ProgressBarStyle.Continuous;
             progressBar.Value = 0;
-            var downloadedFiles = await DownloadClipsAsync(clips, duration);
+            var downloadedFiles = await DownloadAndNormalizeClipsAsync(clips, duration, resolution);
             if (downloadedFiles.Count == 0)
             {
                 MessageBox.Show("Failed to download video clips.");
@@ -91,8 +83,8 @@ namespace BackgroundVideoWinForms
             labelStatus.Text = "Rendering final video...";
             progressBar.Style = ProgressBarStyle.Marquee;
             string safeSearchTerm = string.Join("_", searchTerm.Split(Path.GetInvalidFileNameChars()));
-            string outputFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"{safeSearchTerm}_{DateTime.Now:yyyyMMddHHmmss}.mp4");
-            await Task.Run(() => ConcatenateVideos(downloadedFiles, outputFile, resolution));
+            string outputFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"{safeSearchTerm}_{System.DateTime.Now:yyyyMMddHHmmss}.mp4");
+            await Task.Run(() => videoConcatenator.Concatenate(downloadedFiles, outputFile, resolution));
 
             // Cleanup temp files
             foreach (var file in downloadedFiles)
@@ -109,75 +101,24 @@ namespace BackgroundVideoWinForms
 
         private void textBoxApiKey_Leave(object sender, EventArgs e)
         {
-            // Save API key to registry when the user leaves the textbox
-            try
-            {
-                using (var key = Registry.CurrentUser.CreateSubKey(REGISTRY_PATH))
-                {
-                    key.SetValue(REGISTRY_APIKEY, textBoxApiKey.Text.Trim());
-                }
-            }
-            catch { }
+            RegistryHelper.SaveApiKey(textBoxApiKey.Text.Trim());
         }
 
-        // Helper: Search Pexels API for videos
-        private async Task<List<PexelsVideoClip>> SearchPexelsVideosAsync(string searchTerm, string apiKey)
-        {
-            var result = new List<PexelsVideoClip>();
-            try
-            {
-                using (var client = new HttpClient())
-                {
-                    client.DefaultRequestHeaders.Add("Authorization", apiKey);
-                    string url = $"{PEXELS_API_URL}?query={Uri.EscapeDataString(searchTerm)}&per_page=40";
-                    var response = await client.GetAsync(url);
-                    if (!response.IsSuccessStatusCode)
-                        return result;
-                    var json = await response.Content.ReadAsStringAsync();
-                    using (JsonDocument doc = JsonDocument.Parse(json))
-                    {
-                        var videos = doc.RootElement.GetProperty("videos");
-                        foreach (var video in videos.EnumerateArray())
-                        {
-                            int duration = video.GetProperty("duration").GetInt32();
-                            string bestUrl = null;
-                            int bestWidth = 0;
-                            foreach (var file in video.GetProperty("video_files").EnumerateArray())
-                            {
-                                int width = file.GetProperty("width").GetInt32();
-                                string link = file.GetProperty("link").GetString();
-                                // Prefer highest resolution available
-                                if (width > bestWidth)
-                                {
-                                    bestWidth = width;
-                                    bestUrl = link;
-                                }
-                            }
-                            if (!string.IsNullOrEmpty(bestUrl))
-                                result.Add(new PexelsVideoClip { Url = bestUrl, Duration = duration });
-                        }
-                    }
-                }
-            }
-            catch
-            {
-                // Ignore errors, return empty list
-            }
-            return result;
-        }
-
-        // Helper: Download enough clips to cover the requested duration
-        private async Task<List<string>> DownloadClipsAsync(List<PexelsVideoClip> clips, int totalDuration)
+        private async Task<List<string>> DownloadAndNormalizeClipsAsync(List<PexelsVideoClip> clips, int totalDuration, string resolution)
         {
             var downloadedFiles = new List<string>();
             int accumulated = 0;
             int count = 0;
             string tempDir = Path.Combine(Path.GetTempPath(), "pexels_bgvid");
             Directory.CreateDirectory(tempDir);
-            progressBar.Invoke((Action)(() => {
-                progressBar.Maximum = Math.Min(clips.Count, 20); // Cap at 20 clips for sanity
+            progressBar.Invoke((System.Action)(() => {
+                progressBar.Maximum = System.Math.Min(clips.Count, 20); // Cap at 20 clips for sanity
                 progressBar.Value = 0;
             }));
+            // Determine target width/height from selected resolution
+            int targetWidth = 1280, targetHeight = 720;
+            if (radioButton1080p.Checked) { targetWidth = 1920; targetHeight = 1080; }
+            else if (radioButton480p.Checked) { targetWidth = 854; targetHeight = 480; }
             foreach (var clip in clips)
             {
                 if (accumulated >= totalDuration || count >= 20)
@@ -185,11 +126,18 @@ namespace BackgroundVideoWinForms
                 string fileName = Path.Combine(tempDir, $"clip_{count}.mp4");
                 try
                 {
-                    using (var client = new HttpClient())
-                    using (var response = await client.GetAsync(clip.Url))
-                    using (var fs = new FileStream(fileName, FileMode.Create, FileAccess.Write, FileShare.None))
+                    await videoDownloader.DownloadAsync(clip, fileName);
+                    // Normalize aspect ratio if needed
+                    bool needsNormalization = true;
+                    (int w, int h) = videoNormalizer.ProbeDimensions(fileName);
+                    if (w > 0 && h > 0 && w * targetHeight == h * targetWidth)
+                        needsNormalization = false;
+                    if (needsNormalization)
                     {
-                        await response.Content.CopyToAsync(fs);
+                        string normFile = Path.Combine(tempDir, $"clip_{count}_norm.mp4");
+                        videoNormalizer.Normalize(fileName, normFile, targetWidth, targetHeight);
+                        try { File.Delete(fileName); } catch { }
+                        fileName = normFile;
                     }
                     downloadedFiles.Add(fileName);
                     accumulated += clip.Duration;
@@ -199,11 +147,40 @@ namespace BackgroundVideoWinForms
                     // Ignore failed downloads
                 }
                 count++;
-                progressBar.Invoke((Action)(() => {
-                    progressBar.Value = Math.Min(count, progressBar.Maximum);
+                progressBar.Invoke((System.Action)(() => {
+                    progressBar.Value = System.Math.Min(count, progressBar.Maximum);
                 }));
             }
             return downloadedFiles;
+        }
+
+        // Helper: Probe video dimensions using ffprobe (returns width, height)
+        private (int, int) ProbeVideoDimensions(string filePath)
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "ffprobe",
+                    Arguments = $"-v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 \"{filePath}\"",
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using (var process = Process.Start(psi))
+                {
+                    string output = process.StandardOutput.ReadLine();
+                    process.WaitForExit(2000);
+                    if (!string.IsNullOrEmpty(output))
+                    {
+                        var parts = output.Split('x');
+                        if (parts.Length == 2 && int.TryParse(parts[0], out int w) && int.TryParse(parts[1], out int h))
+                            return (w, h);
+                    }
+                }
+            }
+            catch { }
+            return (0, 0);
         }
 
         // Helper: Concatenate videos using FFmpeg (no audio, selected resolution)
