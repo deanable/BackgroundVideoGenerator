@@ -119,38 +119,59 @@ namespace BackgroundVideoWinForms
             int targetWidth = 1280, targetHeight = 720;
             if (radioButton1080p.Checked) { targetWidth = 1920; targetHeight = 1080; }
             else if (radioButton480p.Checked) { targetWidth = 854; targetHeight = 480; }
+
+            var tasks = new List<Task<string>>();
+            var progressLock = new object();
+            int completed = 0;
+            int clipsToProcess = 0;
+            int accumulatedDuration = 0;
+            // Select enough clips to cover the duration, up to 20
             foreach (var clip in clips)
             {
-                if (accumulated >= totalDuration || count >= 20)
+                if (accumulatedDuration >= totalDuration || clipsToProcess >= 20)
                     break;
-                string fileName = Path.Combine(tempDir, $"clip_{count}.mp4");
-                try
-                {
-                    await videoDownloader.DownloadAsync(clip, fileName);
-                    // Normalize aspect ratio if needed
-                    bool needsNormalization = true;
-                    (int w, int h) = videoNormalizer.ProbeDimensions(fileName);
-                    if (w > 0 && h > 0 && w * targetHeight == h * targetWidth)
-                        needsNormalization = false;
-                    if (needsNormalization)
-                    {
-                        string normFile = Path.Combine(tempDir, $"clip_{count}_norm.mp4");
-                        videoNormalizer.Normalize(fileName, normFile, targetWidth, targetHeight);
-                        try { File.Delete(fileName); } catch { }
-                        fileName = normFile;
-                    }
-                    downloadedFiles.Add(fileName);
-                    accumulated += clip.Duration;
-                }
-                catch
-                {
-                    // Ignore failed downloads
-                }
-                count++;
-                progressBar.Invoke((System.Action)(() => {
-                    progressBar.Value = System.Math.Min(count, progressBar.Maximum);
-                }));
+                accumulatedDuration += clip.Duration;
+                clipsToProcess++;
             }
+            for (int i = 0; i < clipsToProcess; i++)
+            {
+                var clip = clips[i];
+                string fileName = Path.Combine(tempDir, $"clip_{i}.mp4");
+                var task = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await videoDownloader.DownloadAsync(clip, fileName);
+                        // Normalize aspect ratio if needed
+                        bool needsNormalization = true;
+                        (int w, int h) = videoNormalizer.ProbeDimensions(fileName);
+                        if (w > 0 && h > 0 && w * targetHeight == h * targetWidth)
+                            needsNormalization = false;
+                        if (needsNormalization)
+                        {
+                            string normFile = Path.Combine(tempDir, $"clip_{i}_norm.mp4");
+                            videoNormalizer.Normalize(fileName, normFile, targetWidth, targetHeight);
+                            try { File.Delete(fileName); } catch { }
+                            fileName = normFile;
+                        }
+                        lock (downloadedFiles)
+                        {
+                            downloadedFiles.Add(fileName);
+                        }
+                    }
+                    catch { }
+                    lock (progressLock)
+                    {
+                        completed++;
+                        progressBar.Invoke((System.Action)(() => {
+                            progressBar.Value = System.Math.Min(completed, progressBar.Maximum);
+                        }));
+                    }
+                    return fileName;
+                });
+                tasks.Add(task);
+            }
+            await Task.WhenAll(tasks);
             return downloadedFiles;
         }
 
@@ -202,12 +223,6 @@ namespace BackgroundVideoWinForms
         }
 
         // Helper class for Pexels video clip info
-        private class PexelsVideoClip
-        {
-            public string Url { get; set; }
-            public int Duration { get; set; } // in seconds
-        }
-
         private void RunFfmpeg(string arguments)
         {
             var psi = new ProcessStartInfo
