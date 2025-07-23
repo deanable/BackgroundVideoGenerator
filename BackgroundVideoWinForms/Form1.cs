@@ -107,8 +107,6 @@ namespace BackgroundVideoWinForms
         private async Task<List<string>> DownloadAndNormalizeClipsAsync(List<PexelsVideoClip> clips, int totalDuration, string resolution)
         {
             var downloadedFiles = new List<string>();
-            int accumulated = 0;
-            int count = 0;
             string tempDir = Path.Combine(Path.GetTempPath(), "pexels_bgvid");
             Directory.CreateDirectory(tempDir);
             progressBar.Invoke((System.Action)(() => {
