@@ -1,0 +1,62 @@
+# Ignore Visual Studio temporary files, build results, and
+# user-generated files
+
+# Build results
+[Bb]in/
+[Oo]bj/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Mono Auto Generated Files
+mono_crash.*
+
+# Windows image file caches
+Thumbs.db
+ehthumbs.db
+
+# VS Code
+.vscode/
+
+# Visual Studio
+.vs/
+
+# Installer output
+*.msi
+*.exe
+
+# Others
+*.log
+*.tlog
+*.cache
+*.pdb
+*.dbmdl
+*.bak
+*.swp
+*.tmp
+*.ide
+*.sdf
+*.ipch
+*.aps
+*.ncb
+*.opensdf
+*.sbr
+*.scc
+*.psess
+*.vsp
+*.vspscc
+*.vssscc
+*.vsscc
+*.vsmdi
+*.testsettings
+*.vsix
+*.docstates
+_ReSharper*/
+[Tt]est[Rr]esult*/
+
+# Rider
+.idea/
+*.sln.iml 
