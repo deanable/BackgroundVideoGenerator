@@ -80,7 +80,7 @@ namespace BackgroundVideoWinForms
             }
 
             // 3. Concatenate clips using FFmpeg (no audio, selected resolution)
-            labelStatus.Text = "Rendering final video...";
+            labelStatus.Text = "Rendering final video (concatenating)...";
             progressBar.Style = ProgressBarStyle.Marquee;
             string safeSearchTerm = string.Join("_", searchTerm.Split(Path.GetInvalidFileNameChars()));
             string outputFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"{safeSearchTerm}_{System.DateTime.Now:yyyyMMddHHmmss}.mp4");
@@ -139,6 +139,9 @@ namespace BackgroundVideoWinForms
                 {
                     try
                     {
+                        labelStatus.Invoke((System.Action)(() => {
+                            labelStatus.Text = $"Downloading clip {i + 1} of {clipsToProcess}...";
+                        }));
                         await videoDownloader.DownloadAsync(clip, fileName);
                         // Normalize aspect ratio if needed
                         bool needsNormalization = true;
@@ -147,6 +150,9 @@ namespace BackgroundVideoWinForms
                             needsNormalization = false;
                         if (needsNormalization)
                         {
+                            labelStatus.Invoke((System.Action)(() => {
+                                labelStatus.Text = $"Normalizing clip {i + 1} of {clipsToProcess}...";
+                            }));
                             string normFile = Path.Combine(tempDir, $"clip_{i}_norm.mp4");
                             videoNormalizer.Normalize(fileName, normFile, targetWidth, targetHeight);
                             try { File.Delete(fileName); } catch { }
@@ -164,12 +170,18 @@ namespace BackgroundVideoWinForms
                         progressBar.Invoke((System.Action)(() => {
                             progressBar.Value = System.Math.Min(completed, progressBar.Maximum);
                         }));
+                        labelStatus.Invoke((System.Action)(() => {
+                            labelStatus.Text = $"Completed {completed} of {clipsToProcess} clips.";
+                        }));
                     }
                     return fileName;
                 });
                 tasks.Add(task);
             }
             await Task.WhenAll(tasks);
+            labelStatus.Invoke((System.Action)(() => {
+                labelStatus.Text = "All clips downloaded and normalized.";
+            }));
             return downloadedFiles;
         }
 
