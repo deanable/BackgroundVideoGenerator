@@ -38,8 +38,7 @@ namespace BackgroundVideoWinForms
             Logger.Log("ButtonStart_Click: User started video generation");
             string searchTerm = textBoxSearch.Text.Trim();
             int duration = trackBarDuration.Value * 60; // minutes to seconds
-            string resolution = radioButton1080p.Checked ? "1920:1080" :
-                                radioButton720p.Checked ? "1280:720" : "854:480";
+            string resolution = radioButton4k.Checked ? "3840:2160" : "1920:1080";
             string apiKey = textBoxApiKey.Text.Trim();
 
             if (string.IsNullOrWhiteSpace(apiKey))
@@ -164,9 +163,8 @@ namespace BackgroundVideoWinForms
             var downloadedFiles = new List<string>();
             string tempDir = Path.Combine(Path.GetTempPath(), "pexels_bgvid");
             Directory.CreateDirectory(tempDir);
-            int targetWidth = 1280, targetHeight = 720;
-            if (radioButton1080p.Checked) { targetWidth = 1920; targetHeight = 1080; }
-            else if (radioButton480p.Checked) { targetWidth = 854; targetHeight = 480; }
+            int targetWidth = 1920, targetHeight = 1080;
+            if (radioButton4k.Checked) { targetWidth = 3840; targetHeight = 2160; }
 
             var selectedClips = new List<PexelsVideoClip>();
             int accumulatedDuration = 0;

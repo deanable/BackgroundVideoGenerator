@@ -20,8 +20,7 @@ namespace BackgroundVideoWinForms
             trackBarDuration = new System.Windows.Forms.TrackBar();
             groupBoxResolution = new System.Windows.Forms.GroupBox();
             radioButton1080p = new System.Windows.Forms.RadioButton();
-            radioButton720p = new System.Windows.Forms.RadioButton();
-            radioButton480p = new System.Windows.Forms.RadioButton();
+            radioButton4k = new System.Windows.Forms.RadioButton();
             buttonStart = new System.Windows.Forms.Button();
             progressBar = new System.Windows.Forms.ProgressBar();
             labelStatus = new System.Windows.Forms.Label();
@@ -88,47 +87,35 @@ namespace BackgroundVideoWinForms
             // 
             // groupBoxResolution
             // 
+            groupBoxResolution.Controls.Clear();
+            radioButton1080p = new System.Windows.Forms.RadioButton();
+            radioButton4k = new System.Windows.Forms.RadioButton();
+            // 1080p
+            radioButton1080p.AutoSize = true;
+            radioButton1080p.Checked = true;
+            radioButton1080p.Location = new System.Drawing.Point(6, 22);
+            radioButton1080p.Name = "radioButton1080p";
+            radioButton1080p.Size = new System.Drawing.Size(62, 19);
+            radioButton1080p.TabIndex = 0;
+            radioButton1080p.TabStop = true;
+            radioButton1080p.Text = "1080p";
+            radioButton1080p.UseVisualStyleBackColor = true;
+            // 4K
+            radioButton4k.AutoSize = true;
+            radioButton4k.Location = new System.Drawing.Point(6, 47);
+            radioButton4k.Name = "radioButton4k";
+            radioButton4k.Size = new System.Drawing.Size(42, 19);
+            radioButton4k.TabIndex = 1;
+            radioButton4k.Text = "4K";
+            radioButton4k.UseVisualStyleBackColor = true;
             groupBoxResolution.Controls.Add(radioButton1080p);
-            groupBoxResolution.Controls.Add(radioButton720p);
-            groupBoxResolution.Controls.Add(radioButton480p);
+            groupBoxResolution.Controls.Add(radioButton4k);
             groupBoxResolution.Location = new System.Drawing.Point(12, 120);
             groupBoxResolution.Name = "groupBoxResolution";
             groupBoxResolution.Size = new System.Drawing.Size(200, 83);
             groupBoxResolution.TabIndex = 4;
             groupBoxResolution.TabStop = false;
             groupBoxResolution.Text = "Output Resolution";
-            // 
-            // radioButton1080p
-            // 
-            radioButton1080p.AutoSize = true;
-            radioButton1080p.Location = new System.Drawing.Point(6, 62);
-            radioButton1080p.Name = "radioButton1080p";
-            radioButton1080p.Size = new System.Drawing.Size(56, 19);
-            radioButton1080p.TabIndex = 2;
-            radioButton1080p.Text = "1080p";
-            radioButton1080p.UseVisualStyleBackColor = true;
-            // 
-            // radioButton720p
-            // 
-            radioButton720p.AutoSize = true;
-            radioButton720p.Checked = true;
-            radioButton720p.Location = new System.Drawing.Point(6, 42);
-            radioButton720p.Name = "radioButton720p";
-            radioButton720p.Size = new System.Drawing.Size(50, 19);
-            radioButton720p.TabIndex = 1;
-            radioButton720p.TabStop = true;
-            radioButton720p.Text = "720p";
-            radioButton720p.UseVisualStyleBackColor = true;
-            // 
-            // radioButton480p
-            // 
-            radioButton480p.AutoSize = true;
-            radioButton480p.Location = new System.Drawing.Point(6, 22);
-            radioButton480p.Name = "radioButton480p";
-            radioButton480p.Size = new System.Drawing.Size(50, 19);
-            radioButton480p.TabIndex = 0;
-            radioButton480p.Text = "480p";
-            radioButton480p.UseVisualStyleBackColor = true;
             // 
             // buttonStart
             // 
@@ -187,8 +174,7 @@ namespace BackgroundVideoWinForms
         private System.Windows.Forms.TrackBar trackBarDuration;
         private System.Windows.Forms.GroupBox groupBoxResolution;
         private System.Windows.Forms.RadioButton radioButton1080p;
-        private System.Windows.Forms.RadioButton radioButton720p;
-        private System.Windows.Forms.RadioButton radioButton480p;
+        private System.Windows.Forms.RadioButton radioButton4k;
         private System.Windows.Forms.Button buttonStart;
         private System.Windows.Forms.ProgressBar progressBar;
         private System.Windows.Forms.Label labelStatus;
