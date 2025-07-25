@@ -102,10 +102,29 @@ namespace BackgroundVideoWinForms
             labelStatus.Text = $"Done! Saved to {outputFile}";
             buttonStart.Enabled = true;
 
-            // Open the folder containing the output file
+            // Open the folder containing the output file (robust for .NET Core)
             try
             {
-                Process.Start("explorer.exe", $"/select,\"{outputFile}\"");
+                if (File.Exists(outputFile))
+                {
+                    var psi = new ProcessStartInfo
+                    {
+                        FileName = "explorer.exe",
+                        Arguments = $"/select,\"{outputFile}\"",
+                        UseShellExecute = true
+                    };
+                    Process.Start(psi);
+                }
+                else
+                {
+                    // fallback: open Desktop
+                    var psi = new ProcessStartInfo
+                    {
+                        FileName = Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+                        UseShellExecute = true
+                    };
+                    Process.Start(psi);
+                }
             }
             catch { }
         }
