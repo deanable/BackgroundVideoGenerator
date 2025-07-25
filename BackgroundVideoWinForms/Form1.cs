@@ -216,7 +216,7 @@ namespace BackgroundVideoWinForms
             downloadStopwatch.Stop();
             Logger.Log($"Download phase: All downloads complete in {downloadStopwatch.Elapsed.TotalSeconds:F1}s");
 
-            // Normalization phase
+            // Normalization phase (limited parallelism)
             var normStopwatch = new System.Diagnostics.Stopwatch();
             normStopwatch.Start();
             progressBar.Invoke((System.Action)(() => {
@@ -224,36 +224,58 @@ namespace BackgroundVideoWinForms
                 progressBar.Value = 0;
             }));
             var normTimes = new List<double>();
+            int completedNorm = 0;
+            int maxParallel = 2; // Limit parallelism
+            var semaphore = new System.Threading.SemaphoreSlim(maxParallel);
+            var normTasks = new List<Task>();
             for (int i = 0; i < clipsToProcess; i++)
             {
-                string fileName = downloadedFiles[i];
-                var sw = System.Diagnostics.Stopwatch.StartNew();
-                labelStatus.Invoke((System.Action)(() => {
-                    labelStatus.Text = $"Normalizing {i + 1} of {clipsToProcess}: {Path.GetFileName(fileName)}";
-                }));
-                Logger.Log($"Normalization phase: Starting normalization {i + 1} of {clipsToProcess}: {fileName}");
-                (int w, int h) = videoNormalizer.ProbeDimensions(fileName);
-                bool needsNormalization = !(w > 0 && h > 0 && w * targetHeight == h * targetWidth);
-                if (needsNormalization)
+                int idx = i;
+                normTasks.Add(Task.Run(async () =>
                 {
-                    string normFile = Path.Combine(tempDir, $"clip_{i}_norm.mp4");
-                    videoNormalizer.Normalize(fileName, normFile, targetWidth, targetHeight);
-                    try { File.Delete(fileName); } catch { }
-                    fileName = normFile;
-                }
-                sw.Stop();
-                normTimes.Add(sw.Elapsed.TotalSeconds);
-                Logger.Log($"Normalization phase: Finished normalization {i + 1} of {clipsToProcess}: {fileName} in {sw.Elapsed.TotalSeconds:F1}s");
-                progressBar.Invoke((System.Action)(() => {
-                    progressBar.Value = i + 1;
+                    string fileName = downloadedFiles[idx];
+                    await semaphore.WaitAsync();
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    try
+                    {
+                        labelStatus.Invoke((System.Action)(() => {
+                            labelStatus.Text = $"Normalizing {idx + 1} of {clipsToProcess}: {Path.GetFileName(fileName)}";
+                        }));
+                        Logger.Log($"Normalization phase: Starting normalization {idx + 1} of {clipsToProcess}: {fileName}");
+                        (int w, int h) = videoNormalizer.ProbeDimensions(fileName);
+                        bool needsNormalization = !(w > 0 && h > 0 && w * targetHeight == h * targetWidth);
+                        if (needsNormalization)
+                        {
+                            string normFile = Path.Combine(tempDir, $"clip_{idx}_norm.mp4");
+                            videoNormalizer.Normalize(fileName, normFile, targetWidth, targetHeight);
+                            try { File.Delete(fileName); } catch { }
+                            fileName = normFile;
+                        }
+                        downloadedFiles[idx] = fileName;
+                        sw.Stop();
+                        lock (normTimes) { normTimes.Add(sw.Elapsed.TotalSeconds); }
+                        Logger.Log($"Normalization phase: Finished normalization {idx + 1} of {clipsToProcess}: {fileName} in {sw.Elapsed.TotalSeconds:F1}s");
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogException(ex, $"Normalization phase: Error normalizing {fileName}");
+                    }
+                    finally
+                    {
+                        semaphore.Release();
+                        lock (normTimes) { completedNorm++; }
+                        progressBar.Invoke((System.Action)(() => {
+                            progressBar.Value = completedNorm;
+                        }));
+                        double avg = normTimes.Count > 0 ? normTimes.Average() : 0;
+                        double est = avg * (clipsToProcess - completedNorm);
+                        labelStatus.Invoke((System.Action)(() => {
+                            labelStatus.Text = $"Normalizing {completedNorm} of {clipsToProcess} (Est. {est:F0}s left)";
+                        }));
+                    }
                 }));
-                double avg = normTimes.Count > 0 ? normTimes.Average() : 0;
-                double est = avg * (clipsToProcess - (i + 1));
-                labelStatus.Invoke((System.Action)(() => {
-                    labelStatus.Text = $"Normalizing {i + 1} of {clipsToProcess}: {Path.GetFileName(fileName)} (Est. {est:F0}s left)";
-                }));
-                downloadedFiles[i] = fileName;
             }
+            await Task.WhenAll(normTasks);
             normStopwatch.Stop();
             Logger.Log($"Normalization phase: All normalizations complete in {normStopwatch.Elapsed.TotalSeconds:F1}s");
             labelStatus.Invoke((System.Action)(() => {
