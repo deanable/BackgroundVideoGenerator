@@ -101,6 +101,13 @@ namespace BackgroundVideoWinForms
             progressBar.Value = progressBar.Maximum;
             labelStatus.Text = $"Done! Saved to {outputFile}";
             buttonStart.Enabled = true;
+
+            // Open the folder containing the output file
+            try
+            {
+                Process.Start("explorer.exe", $"/select,\"{outputFile}\"");
+            }
+            catch { }
         }
 
         private void textBoxApiKey_Leave(object sender, EventArgs e)
