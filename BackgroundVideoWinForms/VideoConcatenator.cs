@@ -64,17 +64,21 @@ namespace BackgroundVideoWinForms
                 {
                     process.ErrorDataReceived += (s, e) =>
                     {
-                        if (e.Data != null && progressCallback != null)
+                        if (e.Data != null)
                         {
-                            var line = e.Data;
-                            var idx = line.IndexOf("time=");
-                            if (idx >= 0)
+                            Logger.Log($"FFmpeg: {e.Data}");
+                            if (progressCallback != null)
                             {
-                                var timePart = line.Substring(idx + 5);
-                                var spaceIdx = timePart.IndexOf(' ');
-                                if (spaceIdx > 0)
-                                    timePart = timePart.Substring(0, spaceIdx);
-                                progressCallback(timePart);
+                                var line = e.Data;
+                                var idx = line.IndexOf("time=");
+                                if (idx >= 0)
+                                {
+                                    var timePart = line.Substring(idx + 5);
+                                    var spaceIdx = timePart.IndexOf(' ');
+                                    if (spaceIdx > 0)
+                                        timePart = timePart.Substring(0, spaceIdx);
+                                    progressCallback(timePart);
+                                }
                             }
                         }
                     };
