@@ -9,6 +9,7 @@ namespace BackgroundVideoWinForms
     {
         public void Concatenate(List<string> inputFiles, string outputFile, string resolution, Action<string> progressCallback)
         {
+            Logger.Log($"VideoConcatenator: Starting concatenation to {outputFile} with resolution {resolution}");
             // Validate input files
             var validFiles = new List<string>();
             foreach (var file in inputFiles)
@@ -19,11 +20,13 @@ namespace BackgroundVideoWinForms
                 }
                 else
                 {
+                    Logger.Log($"VideoConcatenator: Skipping invalid or empty file: {file}");
                     progressCallback?.Invoke($"Warning: Skipping invalid or empty file: {file}");
                 }
             }
             if (validFiles.Count == 0)
             {
+                Logger.Log($"VideoConcatenator: No valid input files for concatenation.");
                 progressCallback?.Invoke("Error: No valid input files for concatenation.");
                 return;
             }
@@ -36,6 +39,7 @@ namespace BackgroundVideoWinForms
                     log.WriteLine($"{file} - {GetDuration(file)}s");
                 }
             }
+            Logger.Log($"VideoConcatenator: Concat list logged to {debugLog}");
             string tempListFile = Path.Combine(Path.GetTempPath(), $"pexels_concat_{Guid.NewGuid()}.txt");
             using (var sw = new StreamWriter(tempListFile))
             {
@@ -44,36 +48,44 @@ namespace BackgroundVideoWinForms
                     sw.WriteLine($"file '{file.Replace("'", "'\\''")}'");
                 }
             }
-            // Add -vsync 2 and -r 30 for robustness
             string ffmpegArgs = $"-y -f concat -safe 0 -i \"{tempListFile}\" -vf scale={resolution} -c:v libx264 -preset fast -crf 23 -an -vsync 2 -r 30 \"{outputFile}\"";
-            var psi = new ProcessStartInfo
+            Logger.Log($"VideoConcatenator: ffmpeg {ffmpegArgs}");
+            try
             {
-                FileName = "ffmpeg",
-                Arguments = ffmpegArgs,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-            using (var process = Process.Start(psi))
-            {
-                process.ErrorDataReceived += (s, e) =>
+                var psi = new ProcessStartInfo
                 {
-                    if (e.Data != null && progressCallback != null)
-                    {
-                        var line = e.Data;
-                        var idx = line.IndexOf("time=");
-                        if (idx >= 0)
-                        {
-                            var timePart = line.Substring(idx + 5);
-                            var spaceIdx = timePart.IndexOf(' ');
-                            if (spaceIdx > 0)
-                                timePart = timePart.Substring(0, spaceIdx);
-                            progressCallback(timePart);
-                        }
-                    }
+                    FileName = "ffmpeg",
+                    Arguments = ffmpegArgs,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
                 };
-                process.BeginErrorReadLine();
-                process.WaitForExit();
+                using (var process = Process.Start(psi))
+                {
+                    process.ErrorDataReceived += (s, e) =>
+                    {
+                        if (e.Data != null && progressCallback != null)
+                        {
+                            var line = e.Data;
+                            var idx = line.IndexOf("time=");
+                            if (idx >= 0)
+                            {
+                                var timePart = line.Substring(idx + 5);
+                                var spaceIdx = timePart.IndexOf(' ');
+                                if (spaceIdx > 0)
+                                    timePart = timePart.Substring(0, spaceIdx);
+                                progressCallback(timePart);
+                            }
+                        }
+                    };
+                    process.BeginErrorReadLine();
+                    process.WaitForExit();
+                }
+                Logger.Log($"VideoConcatenator: Output file {outputFile} ({(File.Exists(outputFile) ? new FileInfo(outputFile).Length : 0)} bytes)");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogException(ex, $"VideoConcatenator.Concatenate {outputFile}");
             }
             try { File.Delete(tempListFile); } catch { }
         }

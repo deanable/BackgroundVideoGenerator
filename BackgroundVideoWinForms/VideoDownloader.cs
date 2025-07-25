@@ -1,6 +1,7 @@
 using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
+using System;
 
 namespace BackgroundVideoWinForms
 {
@@ -8,11 +9,20 @@ namespace BackgroundVideoWinForms
     {
         public async Task<string> DownloadAsync(PexelsVideoClip clip, string targetPath)
         {
-            using (var client = new HttpClient())
-            using (var response = await client.GetAsync(clip.Url))
-            using (var fs = new FileStream(targetPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            Logger.Log($"VideoDownloader: Downloading {clip.Url} to {targetPath}");
+            try
             {
-                await response.Content.CopyToAsync(fs);
+                using (var client = new HttpClient())
+                using (var response = await client.GetAsync(clip.Url))
+                using (var fs = new FileStream(targetPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                {
+                    await response.Content.CopyToAsync(fs);
+                }
+                Logger.Log($"VideoDownloader: Downloaded {targetPath} ({new FileInfo(targetPath).Length} bytes)");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogException(ex, $"VideoDownloader.DownloadAsync {clip.Url}");
             }
             return targetPath;
         }

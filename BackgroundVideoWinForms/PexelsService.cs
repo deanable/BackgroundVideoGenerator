@@ -18,6 +18,7 @@ namespace BackgroundVideoWinForms
 
         public async Task<List<PexelsVideoClip>> SearchVideosAsync(string searchTerm, string apiKey)
         {
+            Logger.Log($"PexelsService: Searching for '{searchTerm}'");
             var result = new List<PexelsVideoClip>();
             try
             {
@@ -25,13 +26,18 @@ namespace BackgroundVideoWinForms
                 {
                     client.DefaultRequestHeaders.Add("Authorization", apiKey);
                     string url = $"{PEXELS_API_URL}?query={Uri.EscapeDataString(searchTerm)}&per_page=40";
+                    Logger.Log($"PexelsService: GET {url}");
                     var response = await client.GetAsync(url);
                     if (!response.IsSuccessStatusCode)
+                    {
+                        Logger.Log($"PexelsService: API call failed with status {response.StatusCode}");
                         return result;
+                    }
                     var json = await response.Content.ReadAsStringAsync();
                     using (JsonDocument doc = JsonDocument.Parse(json))
                     {
                         var videos = doc.RootElement.GetProperty("videos");
+                        int count = 0;
                         foreach (var video in videos.EnumerateArray())
                         {
                             int duration = video.GetProperty("duration").GetInt32();
@@ -48,14 +54,18 @@ namespace BackgroundVideoWinForms
                                 }
                             }
                             if (!string.IsNullOrEmpty(bestUrl))
+                            {
                                 result.Add(new PexelsVideoClip { Url = bestUrl, Duration = duration });
+                                count++;
+                            }
                         }
+                        Logger.Log($"PexelsService: Found {count} video results");
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Ignore errors, return empty list
+                Logger.LogException(ex, "PexelsService.SearchVideosAsync");
             }
             return result;
         }

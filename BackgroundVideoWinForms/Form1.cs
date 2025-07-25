@@ -25,6 +25,7 @@ namespace BackgroundVideoWinForms
             // Load API key from registry
             textBoxApiKey.Text = RegistryHelper.LoadApiKey();
             textBoxApiKey.Leave += textBoxApiKey_Leave;
+            Logger.Log("Application started");
         }
 
         private const string PEXELS_API_URL = "https://api.pexels.com/videos/search";
@@ -33,6 +34,7 @@ namespace BackgroundVideoWinForms
 
         private async void buttonStart_Click(object sender, EventArgs e)
         {
+            Logger.Log("ButtonStart_Click: User started video generation");
             string searchTerm = textBoxSearch.Text.Trim();
             int duration = trackBarDuration.Value * 60; // minutes to seconds
             string resolution = radioButton1080p.Checked ? "1920:1080" :
@@ -41,11 +43,13 @@ namespace BackgroundVideoWinForms
 
             if (string.IsNullOrWhiteSpace(apiKey))
             {
+                Logger.Log("ButtonStart_Click: No API key entered");
                 MessageBox.Show("Please enter your Pexels API key.");
                 return;
             }
             if (string.IsNullOrWhiteSpace(searchTerm))
             {
+                Logger.Log("ButtonStart_Click: No search term entered");
                 MessageBox.Show("Please enter a search term.");
                 return;
             }
@@ -54,79 +58,95 @@ namespace BackgroundVideoWinForms
             labelStatus.Text = "Searching Pexels...";
             buttonStart.Enabled = false;
 
-            // 1. Query Pexels API for video clips matching searchTerm
-            var clips = await pexelsService.SearchVideosAsync(searchTerm, apiKey);
-            if (clips == null || clips.Count == 0)
-            {
-                MessageBox.Show("No videos found for the search term.");
-                progressBar.Style = ProgressBarStyle.Blocks;
-                labelStatus.Text = "No results.";
-                buttonStart.Enabled = true;
-                return;
-            }
-
-            // 2. Download and normalize enough clips to cover 'duration' seconds
-            labelStatus.Text = "Downloading and normalizing video clips...";
-            progressBar.Style = ProgressBarStyle.Continuous;
-            progressBar.Value = 0;
-            var downloadedFiles = await DownloadAndNormalizeClipsAsync(clips, duration, resolution);
-            if (downloadedFiles.Count == 0)
-            {
-                MessageBox.Show("Failed to download video clips.");
-                progressBar.Style = ProgressBarStyle.Blocks;
-                labelStatus.Text = "Download failed.";
-                buttonStart.Enabled = true;
-                return;
-            }
-
-            // 3. Concatenate clips using FFmpeg (no audio, selected resolution)
-            labelStatus.Text = "Rendering final video (concatenating)...";
-            progressBar.Style = ProgressBarStyle.Marquee;
-            string safeSearchTerm = string.Join("_", searchTerm.Split(Path.GetInvalidFileNameChars()));
-            string outputFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"{safeSearchTerm}_{System.DateTime.Now:yyyyMMddHHmmss}.mp4");
-            await Task.Run(() => videoConcatenator.Concatenate(downloadedFiles, outputFile, resolution, (progress) => {
-                labelStatus.Invoke((System.Action)(() => {
-                    labelStatus.Text = $"Encoding: {progress}";
-                }));
-            }));
-
-            // Cleanup temp files
-            foreach (var file in downloadedFiles)
-            {
-                try { File.Delete(file); } catch { }
-            }
-            try { Directory.Delete(Path.GetDirectoryName(downloadedFiles[0]), true); } catch { }
-
-            progressBar.Style = ProgressBarStyle.Blocks;
-            progressBar.Value = progressBar.Maximum;
-            labelStatus.Text = $"Done! Saved to {outputFile}";
-            buttonStart.Enabled = true;
-
-            // Open the folder containing the output file (robust for .NET Core)
             try
             {
-                if (File.Exists(outputFile))
+                // 1. Query Pexels API for video clips matching searchTerm
+                Logger.Log($"ButtonStart_Click: Searching for '{searchTerm}' with duration {duration}s and resolution {resolution}");
+                var clips = await pexelsService.SearchVideosAsync(searchTerm, apiKey);
+                if (clips == null || clips.Count == 0)
                 {
-                    var psi = new ProcessStartInfo
-                    {
-                        FileName = "explorer.exe",
-                        Arguments = $"/select,\"{outputFile}\"",
-                        UseShellExecute = true
-                    };
-                    Process.Start(psi);
+                    Logger.Log("ButtonStart_Click: No videos found for the search term");
+                    MessageBox.Show("No videos found for the search term.");
+                    progressBar.Style = ProgressBarStyle.Blocks;
+                    labelStatus.Text = "No results.";
+                    buttonStart.Enabled = true;
+                    return;
                 }
-                else
+
+                // 2. Download and normalize enough clips to cover 'duration' seconds
+                Logger.Log($"ButtonStart_Click: Downloading and normalizing {clips.Count} clips");
+                labelStatus.Text = "Downloading and normalizing video clips...";
+                progressBar.Style = ProgressBarStyle.Continuous;
+                progressBar.Value = 0;
+                var downloadedFiles = await DownloadAndNormalizeClipsAsync(clips, duration, resolution);
+                if (downloadedFiles.Count == 0)
                 {
-                    // fallback: open Desktop
-                    var psi = new ProcessStartInfo
-                    {
-                        FileName = Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
-                        UseShellExecute = true
-                    };
-                    Process.Start(psi);
+                    Logger.Log("ButtonStart_Click: Failed to download video clips");
+                    MessageBox.Show("Failed to download video clips.");
+                    progressBar.Style = ProgressBarStyle.Blocks;
+                    labelStatus.Text = "Download failed.";
+                    buttonStart.Enabled = true;
+                    return;
                 }
+
+                // 3. Concatenate clips using FFmpeg (no audio, selected resolution)
+                Logger.Log($"ButtonStart_Click: Concatenating {downloadedFiles.Count} files");
+                labelStatus.Text = "Rendering final video (concatenating)...";
+                progressBar.Style = ProgressBarStyle.Marquee;
+                string safeSearchTerm = string.Join("_", searchTerm.Split(Path.GetInvalidFileNameChars()));
+                string outputFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"{safeSearchTerm}_{System.DateTime.Now:yyyyMMddHHmmss}.mp4");
+                await Task.Run(() => videoConcatenator.Concatenate(downloadedFiles, outputFile, resolution, (progress) => {
+                    labelStatus.Invoke((System.Action)(() => {
+                        labelStatus.Text = $"Encoding: {progress}";
+                    }));
+                }));
+
+                // Cleanup temp files
+                Logger.Log("ButtonStart_Click: Cleaning up temp files");
+                foreach (var file in downloadedFiles)
+                {
+                    try { File.Delete(file); } catch { }
+                }
+                try { Directory.Delete(Path.GetDirectoryName(downloadedFiles[0]), true); } catch { }
+
+                progressBar.Style = ProgressBarStyle.Blocks;
+                progressBar.Value = progressBar.Maximum;
+                labelStatus.Text = $"Done! Saved to {outputFile}";
+                buttonStart.Enabled = true;
+
+                // Open the folder containing the output file (robust for .NET Core)
+                try
+                {
+                    if (File.Exists(outputFile))
+                    {
+                        var psi = new ProcessStartInfo
+                        {
+                            FileName = "explorer.exe",
+                            Arguments = $"/select,\"{outputFile}\"",
+                            UseShellExecute = true
+                        };
+                        Process.Start(psi);
+                    }
+                    else
+                    {
+                        // fallback: open Desktop
+                        var psi = new ProcessStartInfo
+                        {
+                            FileName = Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+                            UseShellExecute = true
+                        };
+                        Process.Start(psi);
+                    }
+                }
+                catch (Exception ex) { Logger.LogException(ex, "Open output folder"); }
+
+                MessageBox.Show($"Pipeline log saved to:\n{Logger.LogFilePath}", "Debug Log", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Logger.LogException(ex, "ButtonStart_Click pipeline");
+                MessageBox.Show($"An error occurred. See log:\n{Logger.LogFilePath}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void textBoxApiKey_Leave(object sender, EventArgs e)
@@ -191,7 +211,7 @@ namespace BackgroundVideoWinForms
                             downloadedFiles.Add(fileName);
                         }
                     }
-                    catch { }
+                    catch (Exception ex) { Logger.LogException(ex, $"DownloadAndNormalizeClipsAsync: Error processing clip {i}"); }
                     lock (progressLock)
                     {
                         completed++;
@@ -238,7 +258,7 @@ namespace BackgroundVideoWinForms
                     }
                 }
             }
-            catch { }
+            catch (Exception ex) { Logger.LogException(ex, $"ProbeVideoDimensions: Error probing dimensions for {filePath}"); }
             return (0, 0);
         }
 
