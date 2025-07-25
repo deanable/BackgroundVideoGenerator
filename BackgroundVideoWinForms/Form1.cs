@@ -8,6 +8,7 @@ using System.Windows.Forms;
 using System.Net.Http;
 using System.Text.Json;
 using Microsoft.Win32;
+using System.Linq; // Added for Average()
 
 namespace BackgroundVideoWinForms
 {
@@ -93,6 +94,8 @@ namespace BackgroundVideoWinForms
                 Logger.Log($"ButtonStart_Click: Concatenating {downloadedFiles.Count} files");
                 labelStatus.Text = "Rendering final video (concatenating)...";
                 progressBar.Style = ProgressBarStyle.Marquee;
+                var concatStopwatch = new System.Diagnostics.Stopwatch();
+                concatStopwatch.Start();
                 string safeSearchTerm = string.Join("_", searchTerm.Split(Path.GetInvalidFileNameChars()));
                 string outputFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"{safeSearchTerm}_{System.DateTime.Now:yyyyMMddHHmmss}.mp4");
                 await Task.Run(() => videoConcatenator.Concatenate(downloadedFiles, outputFile, resolution, (progress) => {
@@ -100,6 +103,8 @@ namespace BackgroundVideoWinForms
                         labelStatus.Text = $"Encoding: {progress}";
                     }));
                 }));
+                concatStopwatch.Stop();
+                Logger.Log($"Concatenation phase: Completed in {concatStopwatch.Elapsed.TotalSeconds:F1}s");
 
                 // Cleanup temp files
                 Logger.Log("ButtonStart_Click: Cleaning up temp files");
@@ -159,19 +164,12 @@ namespace BackgroundVideoWinForms
             var downloadedFiles = new List<string>();
             string tempDir = Path.Combine(Path.GetTempPath(), "pexels_bgvid");
             Directory.CreateDirectory(tempDir);
-            progressBar.Invoke((System.Action)(() => {
-                progressBar.Maximum = System.Math.Min(clips.Count, 20); // Cap at 20 clips for sanity
-                progressBar.Value = 0;
-            }));
             int targetWidth = 1280, targetHeight = 720;
             if (radioButton1080p.Checked) { targetWidth = 1920; targetHeight = 1080; }
             else if (radioButton480p.Checked) { targetWidth = 854; targetHeight = 480; }
 
-            var tasks = new List<Task<string>>();
-            var progressLock = new object();
-            int completed = 0;
-            int accumulatedDuration = 0;
             var selectedClips = new List<PexelsVideoClip>();
+            int accumulatedDuration = 0;
             foreach (var clip in clips)
             {
                 if (accumulatedDuration >= totalDuration || selectedClips.Count >= 20)
@@ -180,53 +178,84 @@ namespace BackgroundVideoWinForms
                 selectedClips.Add(clip);
             }
             int clipsToProcess = selectedClips.Count;
+
+            // Download phase
+            var downloadStopwatch = new System.Diagnostics.Stopwatch();
+            downloadStopwatch.Start();
+            progressBar.Invoke((System.Action)(() => {
+                progressBar.Maximum = clipsToProcess;
+                progressBar.Value = 0;
+            }));
+            labelStatus.Invoke((System.Action)(() => {
+                labelStatus.Text = $"Downloading 1 of {clipsToProcess}...";
+            }));
+            var downloadTimes = new List<double>();
             for (int i = 0; i < clipsToProcess; i++)
             {
                 var clip = selectedClips[i];
                 string fileName = Path.Combine(tempDir, $"clip_{i}.mp4");
-                var task = Task.Run(async () =>
-                {
-                    try
-                    {
-                        labelStatus.Invoke((System.Action)(() => {
-                            labelStatus.Text = $"Downloading clip {completed + 1} of {clipsToProcess}...";
-                        }));
-                        await videoDownloader.DownloadAsync(clip, fileName);
-                        bool needsNormalization = true;
-                        (int w, int h) = videoNormalizer.ProbeDimensions(fileName);
-                        if (w > 0 && h > 0 && w * targetHeight == h * targetWidth)
-                            needsNormalization = false;
-                        if (needsNormalization)
-                        {
-                            labelStatus.Invoke((System.Action)(() => {
-                                labelStatus.Text = $"Normalizing clip {completed + 1} of {clipsToProcess}...";
-                            }));
-                            string normFile = Path.Combine(tempDir, $"clip_{i}_norm.mp4");
-                            videoNormalizer.Normalize(fileName, normFile, targetWidth, targetHeight);
-                            try { File.Delete(fileName); } catch { }
-                            fileName = normFile;
-                        }
-                        lock (downloadedFiles)
-                        {
-                            downloadedFiles.Add(fileName);
-                        }
-                    }
-                    catch (Exception ex) { Logger.LogException(ex, $"DownloadAndNormalizeClipsAsync: Error processing clip {i}"); }
-                    lock (progressLock)
-                    {
-                        completed++;
-                        progressBar.Invoke((System.Action)(() => {
-                            progressBar.Value = System.Math.Min(completed, progressBar.Maximum);
-                        }));
-                        labelStatus.Invoke((System.Action)(() => {
-                            labelStatus.Text = $"Completed {completed} of {clipsToProcess} clips.";
-                        }));
-                    }
-                    return fileName;
-                });
-                tasks.Add(task);
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                labelStatus.Invoke((System.Action)(() => {
+                    labelStatus.Text = $"Downloading {i + 1} of {clipsToProcess}: {Path.GetFileName(fileName)}";
+                }));
+                Logger.Log($"Download phase: Starting download {i + 1} of {clipsToProcess}: {clip.Url}");
+                await videoDownloader.DownloadAsync(clip, fileName);
+                sw.Stop();
+                downloadTimes.Add(sw.Elapsed.TotalSeconds);
+                Logger.Log($"Download phase: Finished download {i + 1} of {clipsToProcess}: {fileName} in {sw.Elapsed.TotalSeconds:F1}s");
+                progressBar.Invoke((System.Action)(() => {
+                    progressBar.Value = i + 1;
+                }));
+                double avg = downloadTimes.Count > 0 ? downloadTimes.Average() : 0;
+                double est = avg * (clipsToProcess - (i + 1));
+                labelStatus.Invoke((System.Action)(() => {
+                    labelStatus.Text = $"Downloading {i + 1} of {clipsToProcess}: {Path.GetFileName(fileName)} (Est. {est:F0}s left)";
+                }));
+                downloadedFiles.Add(fileName);
             }
-            await Task.WhenAll(tasks);
+            downloadStopwatch.Stop();
+            Logger.Log($"Download phase: All downloads complete in {downloadStopwatch.Elapsed.TotalSeconds:F1}s");
+
+            // Normalization phase
+            var normStopwatch = new System.Diagnostics.Stopwatch();
+            normStopwatch.Start();
+            progressBar.Invoke((System.Action)(() => {
+                progressBar.Maximum = clipsToProcess;
+                progressBar.Value = 0;
+            }));
+            var normTimes = new List<double>();
+            for (int i = 0; i < clipsToProcess; i++)
+            {
+                string fileName = downloadedFiles[i];
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                labelStatus.Invoke((System.Action)(() => {
+                    labelStatus.Text = $"Normalizing {i + 1} of {clipsToProcess}: {Path.GetFileName(fileName)}";
+                }));
+                Logger.Log($"Normalization phase: Starting normalization {i + 1} of {clipsToProcess}: {fileName}");
+                (int w, int h) = videoNormalizer.ProbeDimensions(fileName);
+                bool needsNormalization = !(w > 0 && h > 0 && w * targetHeight == h * targetWidth);
+                if (needsNormalization)
+                {
+                    string normFile = Path.Combine(tempDir, $"clip_{i}_norm.mp4");
+                    videoNormalizer.Normalize(fileName, normFile, targetWidth, targetHeight);
+                    try { File.Delete(fileName); } catch { }
+                    fileName = normFile;
+                }
+                sw.Stop();
+                normTimes.Add(sw.Elapsed.TotalSeconds);
+                Logger.Log($"Normalization phase: Finished normalization {i + 1} of {clipsToProcess}: {fileName} in {sw.Elapsed.TotalSeconds:F1}s");
+                progressBar.Invoke((System.Action)(() => {
+                    progressBar.Value = i + 1;
+                }));
+                double avg = normTimes.Count > 0 ? normTimes.Average() : 0;
+                double est = avg * (clipsToProcess - (i + 1));
+                labelStatus.Invoke((System.Action)(() => {
+                    labelStatus.Text = $"Normalizing {i + 1} of {clipsToProcess}: {Path.GetFileName(fileName)} (Est. {est:F0}s left)";
+                }));
+                downloadedFiles[i] = fileName;
+            }
+            normStopwatch.Stop();
+            Logger.Log($"Normalization phase: All normalizations complete in {normStopwatch.Elapsed.TotalSeconds:F1}s");
             labelStatus.Invoke((System.Action)(() => {
                 labelStatus.Text = "All clips downloaded and normalized.";
             }));
