@@ -48,7 +48,8 @@ namespace BackgroundVideoWinForms
                     sw.WriteLine($"file '{file.Replace("'", "'\\''")}'");
                 }
             }
-            string ffmpegArgs = $"-y -f concat -safe 0 -i \"{tempListFile}\" -vf scale={resolution} -c:v libx264 -preset fast -crf 23 -an -vsync 2 -r 30 \"{outputFile}\"";
+            // Remove -vsync 2 from the FFmpeg command
+            string ffmpegArgs = $"-y -f concat -safe 0 -i \"{tempListFile}\" -vf scale={resolution} -c:v libx264 -preset fast -crf 23 -an -r 30 \"{outputFile}\"";
             Logger.Log($"VideoConcatenator: ffmpeg {ffmpegArgs}");
             try
             {
