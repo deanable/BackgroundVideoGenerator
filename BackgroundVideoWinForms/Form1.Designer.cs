@@ -110,7 +110,7 @@ namespace BackgroundVideoWinForms
             radioButton4k.UseVisualStyleBackColor = true;
             groupBoxResolution.Controls.Add(radioButton1080p);
             groupBoxResolution.Controls.Add(radioButton4k);
-            groupBoxResolution.Location = new System.Drawing.Point(12, 120);
+            groupBoxResolution.Location = new System.Drawing.Point(12, 160);
             groupBoxResolution.Name = "groupBoxResolution";
             groupBoxResolution.Size = new System.Drawing.Size(200, 83);
             groupBoxResolution.TabIndex = 4;
@@ -119,7 +119,7 @@ namespace BackgroundVideoWinForms
             // 
             // buttonStart
             // 
-            buttonStart.Location = new System.Drawing.Point(12, 220);
+            buttonStart.Location = new System.Drawing.Point(12, 260);
             buttonStart.Name = "buttonStart";
             buttonStart.Size = new System.Drawing.Size(330, 30);
             buttonStart.TabIndex = 5;
@@ -129,7 +129,7 @@ namespace BackgroundVideoWinForms
             // 
             // progressBar
             // 
-            progressBar.Location = new System.Drawing.Point(12, 260);
+            progressBar.Location = new System.Drawing.Point(12, 300);
             progressBar.Name = "progressBar";
             progressBar.Size = new System.Drawing.Size(330, 23);
             progressBar.TabIndex = 6;
@@ -137,7 +137,7 @@ namespace BackgroundVideoWinForms
             // labelStatus
             // 
             labelStatus.AutoSize = true;
-            labelStatus.Location = new System.Drawing.Point(12, 290);
+            labelStatus.Location = new System.Drawing.Point(12, 330);
             labelStatus.Name = "labelStatus";
             labelStatus.Size = new System.Drawing.Size(0, 15);
             labelStatus.TabIndex = 7;
@@ -146,7 +146,7 @@ namespace BackgroundVideoWinForms
             // 
             AutoScaleDimensions = new System.Drawing.SizeF(7F, 15F);
             AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            ClientSize = new System.Drawing.Size(360, 320);
+            ClientSize = new System.Drawing.Size(360, 360);
             Controls.Add(labelStatus);
             Controls.Add(progressBar);
             Controls.Add(buttonStart);

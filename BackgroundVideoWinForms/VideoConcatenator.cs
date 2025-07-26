@@ -116,7 +116,7 @@ namespace BackgroundVideoWinForms
                                         double progressPercent = (currentTime.TotalSeconds / totalDuration) * 100;
                                         // Cap progress at 100% to prevent impossible values
                                         progressPercent = Math.Min(progressPercent, 100.0);
-                                        progressCallback($"Encoding: {progressPercent:F1}% ({timePart})");
+                                        progressCallback($"Encoding: {progressPercent.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)}% ({timePart})");
                                     }
                                     else
                                     {
