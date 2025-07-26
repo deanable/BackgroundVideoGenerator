@@ -211,7 +211,7 @@ namespace BackgroundVideoWinForms
                 progressBar.Value = 0;
             }));
             labelStatus.Invoke((System.Action)(() => {
-                labelStatus.Text = $"Downloading 1 of {clipsToProcess}...";
+                labelStatus.Text = $"Downloading 0 of {clipsToProcess} clips...";
             }));
             var downloadTimes = new List<double>();
             for (int i = 0; i < clipsToProcess; i++)
@@ -219,22 +219,39 @@ namespace BackgroundVideoWinForms
                 var clip = selectedClips[i];
                 string fileName = Path.Combine(tempDir, $"clip_{i}.mp4");
                 var sw = System.Diagnostics.Stopwatch.StartNew();
+                
+                // Update status to show current download
                 labelStatus.Invoke((System.Action)(() => {
-                    labelStatus.Text = $"Downloading {i + 1} of {clipsToProcess}: {Path.GetFileName(fileName)}";
+                    labelStatus.Text = $"Downloading {i + 1} of {clipsToProcess}: {Path.GetFileName(fileName)} ({clip.Duration}s clip)";
                 }));
+                
                 Logger.Log($"Download phase: Starting download {i + 1} of {clipsToProcess}: {clip.Url} (duration: {clip.Duration}s)");
                 await videoDownloader.DownloadAsync(clip, fileName);
                 sw.Stop();
                 downloadTimes.Add(sw.Elapsed.TotalSeconds);
                 Logger.Log($"Download phase: Finished download {i + 1} of {clipsToProcess}: {fileName} in {sw.Elapsed.TotalSeconds:F1}s");
+                
+                // Update progress bar
                 progressBar.Invoke((System.Action)(() => {
                     progressBar.Value = i + 1;
                 }));
+                
+                // Calculate and display progress with time estimates
                 double avg = downloadTimes.Count > 0 ? downloadTimes.Average() : 0;
                 double est = avg * (clipsToProcess - (i + 1));
+                double percentComplete = (double)(i + 1) / clipsToProcess * 100;
+                
                 labelStatus.Invoke((System.Action)(() => {
-                    labelStatus.Text = $"Downloading {i + 1} of {clipsToProcess}: {Path.GetFileName(fileName)} (Est. {est:F0}s left)";
+                    if (i + 1 < clipsToProcess)
+                    {
+                        labelStatus.Text = $"Downloading {i + 1} of {clipsToProcess} clips ({percentComplete:F0}% complete) - Est. {est:F0}s remaining";
+                    }
+                    else
+                    {
+                        labelStatus.Text = $"Download complete! Downloaded {clipsToProcess} clips in {downloadStopwatch.Elapsed.TotalSeconds:F1}s";
+                    }
                 }));
+                
                 downloadedFiles.Add(fileName);
             }
             downloadStopwatch.Stop();
@@ -252,6 +269,12 @@ namespace BackgroundVideoWinForms
             int maxParallel = 2; // Limit parallelism
             var semaphore = new System.Threading.SemaphoreSlim(maxParallel);
             var normTasks = new List<Task>();
+            
+            // Update initial status
+            labelStatus.Invoke((System.Action)(() => {
+                labelStatus.Text = $"Normalizing 0 of {clipsToProcess} clips...";
+            }));
+            
             for (int i = 0; i < clipsToProcess; i++)
             {
                 int idx = i;
@@ -262,19 +285,36 @@ namespace BackgroundVideoWinForms
                     var sw = System.Diagnostics.Stopwatch.StartNew();
                     try
                     {
+                        // Update status to show current clip being processed
                         labelStatus.Invoke((System.Action)(() => {
                             labelStatus.Text = $"Normalizing {idx + 1} of {clipsToProcess}: {Path.GetFileName(fileName)}";
                         }));
                         Logger.Log($"Normalization phase: Starting normalization {idx + 1} of {clipsToProcess}: {fileName}");
+                        
+                        // Probe dimensions first
                         (int w, int h) = videoNormalizer.ProbeDimensions(fileName);
                         bool needsNormalization = !(w > 0 && h > 0 && w * targetHeight == h * targetWidth);
+                        
                         if (needsNormalization)
                         {
+                            // Update status to show normalization is happening
+                            labelStatus.Invoke((System.Action)(() => {
+                                labelStatus.Text = $"Normalizing {idx + 1} of {clipsToProcess}: {Path.GetFileName(fileName)} (resizing to {targetWidth}x{targetHeight})";
+                            }));
+                            
                             string normFile = Path.Combine(tempDir, $"clip_{idx}_norm.mp4");
                             videoNormalizer.Normalize(fileName, normFile, targetWidth, targetHeight);
                             try { File.Delete(fileName); } catch { }
                             fileName = normFile;
                         }
+                        else
+                        {
+                            // Update status to show clip was already correct size
+                            labelStatus.Invoke((System.Action)(() => {
+                                labelStatus.Text = $"Normalizing {idx + 1} of {clipsToProcess}: {Path.GetFileName(fileName)} (already correct size)";
+                            }));
+                        }
+                        
                         downloadedFiles[idx] = fileName;
                         sw.Stop();
                         lock (normTimes) { normTimes.Add(sw.Elapsed.TotalSeconds); }
@@ -288,13 +328,26 @@ namespace BackgroundVideoWinForms
                     {
                         semaphore.Release();
                         lock (normTimes) { completedNorm++; }
+                        
+                        // Update progress bar
                         progressBar.Invoke((System.Action)(() => {
                             progressBar.Value = completedNorm;
                         }));
+                        
+                        // Calculate and display progress with time estimates
                         double avg = normTimes.Count > 0 ? normTimes.Average() : 0;
                         double est = avg * (clipsToProcess - completedNorm);
+                        double percentComplete = (double)completedNorm / clipsToProcess * 100;
+                        
                         labelStatus.Invoke((System.Action)(() => {
-                            labelStatus.Text = $"Normalizing {completedNorm} of {clipsToProcess} (Est. {est:F0}s left)";
+                            if (completedNorm < clipsToProcess)
+                            {
+                                labelStatus.Text = $"Normalizing {completedNorm} of {clipsToProcess} clips ({percentComplete:F0}% complete) - Est. {est:F0}s remaining";
+                            }
+                            else
+                            {
+                                labelStatus.Text = $"Normalization complete! Processed {completedNorm} clips in {normStopwatch.Elapsed.TotalSeconds:F1}s";
+                            }
                         }));
                     }
                 }));

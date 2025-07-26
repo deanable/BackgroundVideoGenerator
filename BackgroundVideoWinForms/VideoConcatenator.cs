@@ -148,20 +148,37 @@ namespace BackgroundVideoWinForms
         {
             try
             {
+                Logger.Log($"GetDuration: Attempting to get duration for {filePath}");
+                
                 var psi = new ProcessStartInfo
                 {
                     FileName = "ffprobe",
                     Arguments = $"-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{filePath}\"",
                     RedirectStandardOutput = true,
+                    RedirectStandardError = true,
                     UseShellExecute = false,
                     CreateNoWindow = true
                 };
+                
+                Logger.Log($"GetDuration: Running ffprobe with args: {psi.Arguments}");
+                
                 using (var process = Process.Start(psi))
                 {
                     string output = process.StandardOutput.ReadLine();
+                    string error = process.StandardError.ReadLine();
                     process.WaitForExit(5000); // Increased timeout
+                    
+                    Logger.Log($"GetDuration: ffprobe output: '{output}', error: '{error}', exit code: {process.ExitCode}");
+                    
                     if (double.TryParse(output, out double duration))
+                    {
+                        Logger.Log($"GetDuration: Successfully parsed duration: {duration}s");
                         return duration;
+                    }
+                    else
+                    {
+                        Logger.Log($"GetDuration: Failed to parse duration from output: '{output}'");
+                    }
                 }
             }
             catch (Exception ex)
