@@ -120,13 +120,62 @@ namespace BackgroundVideoWinForms
                 concatStopwatch.Stop();
                 Logger.Log($"Concatenation phase: Completed in {concatStopwatch.Elapsed.TotalSeconds:F1}s");
 
-                // Cleanup temp files
-                Logger.Log("ButtonStart_Click: Cleaning up temp files");
+                // Comprehensive cleanup of all temp files
+                Logger.Log("ButtonStart_Click: Cleaning up all temp files");
+                
+                // Clean up downloaded and normalized files
                 foreach (var file in downloadedFiles)
                 {
-                    try { File.Delete(file); } catch { }
+                    try 
+                    { 
+                        if (File.Exists(file)) 
+                        {
+                            File.Delete(file);
+                            Logger.Log($"Deleted temp file: {file}");
+                        }
+                    } 
+                    catch (Exception ex) 
+                    { 
+                        Logger.Log($"Failed to delete temp file {file}: {ex.Message}");
+                    }
                 }
-                try { Directory.Delete(Path.GetDirectoryName(downloadedFiles[0]), true); } catch { }
+                
+                // Clean up the entire temp directory
+                string tempDir = Path.Combine(Path.GetTempPath(), "pexels_bgvid");
+                try 
+                {
+                    if (Directory.Exists(tempDir))
+                    {
+                        Directory.Delete(tempDir, true);
+                        Logger.Log($"Deleted temp directory: {tempDir}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Failed to delete temp directory {tempDir}: {ex.Message}");
+                }
+                
+                // Clean up any remaining concat list files
+                try
+                {
+                    var concatFiles = Directory.GetFiles(Path.GetTempPath(), "pexels_concat_*.txt");
+                    foreach (var concatFile in concatFiles)
+                    {
+                        try
+                        {
+                            File.Delete(concatFile);
+                            Logger.Log($"Deleted concat file: {concatFile}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Log($"Failed to delete concat file {concatFile}: {ex.Message}");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Failed to clean up concat files: {ex.Message}");
+                }
 
                 progressBar.Style = ProgressBarStyle.Blocks;
                 progressBar.Value = progressBar.Maximum;
