@@ -249,6 +249,11 @@ namespace BackgroundVideoWinForms
             RegistryHelper.SaveDuration(trackBarDuration.Value);
         }
 
+        private void trackBarDuration_Scroll(object sender, EventArgs e)
+        {
+            labelDuration.Text = $"Duration: {trackBarDuration.Value} minute{(trackBarDuration.Value == 1 ? "" : "s")}";
+        }
+
         private void radioButtonResolution_CheckedChanged(object sender, EventArgs e)
         {
             if (sender is RadioButton radioButton && radioButton.Checked)

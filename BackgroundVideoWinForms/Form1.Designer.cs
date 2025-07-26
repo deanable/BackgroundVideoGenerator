@@ -81,9 +81,7 @@ namespace BackgroundVideoWinForms
             trackBarDuration.Name = "trackBarDuration";
             trackBarDuration.Size = new System.Drawing.Size(330, 45);
             trackBarDuration.TabIndex = 5;
-            trackBarDuration.Scroll += (sender, e) => {
-                labelDuration.Text = $"Duration: {trackBarDuration.Value} minute{(trackBarDuration.Value == 1 ? "" : "s")}";
-            };
+            trackBarDuration.Scroll += trackBarDuration_Scroll;
             // 
             // groupBoxResolution
             // 
