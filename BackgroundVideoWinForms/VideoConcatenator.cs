@@ -129,8 +129,8 @@ namespace BackgroundVideoWinForms
                     
                     process.BeginErrorReadLine();
                     
-                    // Add timeout to prevent infinite processing
-                    if (!process.WaitForExit(300000)) // 5 minute timeout to prevent runaway processes
+                    // Add timeout to prevent infinite processing - increased for longer videos
+                    if (!process.WaitForExit(1200000)) // 20 minute timeout for longer videos
                     {
                         Logger.Log("VideoConcatenator: Process timeout - killing FFmpeg");
                         try { process.Kill(); } catch { }
