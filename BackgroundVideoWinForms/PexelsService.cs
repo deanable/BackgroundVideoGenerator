@@ -29,8 +29,11 @@ namespace BackgroundVideoWinForms
                 using (var client = new HttpClient())
                 {
                     client.DefaultRequestHeaders.Add("Authorization", apiKey);
-                    string url = $"{PEXELS_API_URL}?query={Uri.EscapeDataString(searchTerm)}&per_page=40";
-                    Logger.Log($"PexelsService: GET {url}");
+                    
+                    // Phase 1 Randomization: Random page selection
+                    int randomPage = Random.Shared.Next(1, 21); // Pages 1-20 (800 videos total)
+                    string url = $"{PEXELS_API_URL}?query={Uri.EscapeDataString(searchTerm)}&per_page=40&page={randomPage}";
+                    Logger.Log($"PexelsService: GET {url} (random page {randomPage})");
                     var response = await client.GetAsync(url);
                     if (!response.IsSuccessStatusCode)
                     {

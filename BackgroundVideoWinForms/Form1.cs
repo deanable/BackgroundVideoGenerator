@@ -276,17 +276,22 @@ namespace BackgroundVideoWinForms
             int targetWidth = 1920, targetHeight = 1080;
             if (radioButton4k.Checked) { targetWidth = 3840; targetHeight = 2160; }
 
-            // Improved clip selection with better duration management
+            // Improved clip selection with randomization and better duration management
             var selectedClips = new List<PexelsVideoClip>();
             int accumulatedDuration = 0;
-            int maxClips = 15; // Increased from 10 to allow more clips
+            int maxClips = Math.Max(30, totalDuration / 10); // Dynamic max clips based on target duration
             
-            foreach (var clip in clips)
+            // Shuffle clips for randomization
+            var shuffledClips = clips.OrderBy(x => Random.Shared.Next()).ToList();
+            Logger.Log($"Randomized {clips.Count} clips for selection");
+            
+            foreach (var clip in shuffledClips)
             {
-                // Skip clips that are too long (more than 60 seconds instead of 30)
-                if (clip.Duration > 60)
+                // Skip clips that are too long (allow longer clips for longer targets)
+                int maxClipDuration = Math.Max(60, totalDuration / 4); // Allow up to 1/4 of target duration
+                if (clip.Duration > maxClipDuration)
                 {
-                    Logger.Log($"Skipping clip with duration {clip.Duration}s (too long)");
+                    Logger.Log($"Skipping clip with duration {clip.Duration}s (too long, max: {maxClipDuration}s)");
                     continue;
                 }
                 
@@ -294,8 +299,8 @@ namespace BackgroundVideoWinForms
                 if (accumulatedDuration >= totalDuration || selectedClips.Count >= maxClips)
                     break;
                     
-                // Allow exceeding target by up to 20% instead of 10%
-                if (accumulatedDuration + clip.Duration <= totalDuration * 1.2)
+                // Allow exceeding target by up to 30% for better coverage
+                if (accumulatedDuration + clip.Duration <= totalDuration * 1.3)
                 {
                     accumulatedDuration += clip.Duration;
                     selectedClips.Add(clip);
