@@ -272,7 +272,7 @@ namespace BackgroundVideoWinForms
                     string trimmedOutput = output.Trim();
                     Logger.Log($"GetDuration: Attempting to parse duration from: '{trimmedOutput}'");
                     
-                    if (double.TryParse(trimmedOutput, out double duration))
+                    if (double.TryParse(trimmedOutput, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double duration))
                     {
                         Logger.Log($"GetDuration: Successfully parsed duration: {duration}s");
                         return duration;
@@ -280,15 +280,21 @@ namespace BackgroundVideoWinForms
                     else
                     {
                         Logger.Log($"GetDuration: Failed to parse duration from output: '{trimmedOutput}'");
-                        // Try alternative parsing
+                        // Try alternative parsing with invariant culture
                         if (trimmedOutput.Contains("duration="))
                         {
                             var parts = trimmedOutput.Split('=');
-                            if (parts.Length > 1 && double.TryParse(parts[1], out double altDuration))
+                            if (parts.Length > 1 && double.TryParse(parts[1], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double altDuration))
                             {
                                 Logger.Log($"GetDuration: Alternative parsing successful: {altDuration}s");
                                 return altDuration;
                             }
+                        }
+                        // Try parsing with different number formats
+                        if (double.TryParse(trimmedOutput.Replace(',', '.'), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double fallbackDuration))
+                        {
+                            Logger.Log($"GetDuration: Fallback parsing successful: {fallbackDuration}s");
+                            return fallbackDuration;
                         }
                     }
                 }
