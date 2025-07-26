@@ -1,6 +1,9 @@
 using System;
 using System.IO;
 using System.Diagnostics;
+using System.Threading;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace BackgroundVideoWinForms
 {
@@ -42,11 +45,29 @@ namespace BackgroundVideoWinForms
             return (0, 0);
         }
 
-        public void Normalize(string inputPath, string outputPath, int targetWidth, int targetHeight)
+        public void Normalize(string inputPath, string outputPath, int targetWidth, int targetHeight, Action<string> progressCallback = null)
         {
-            string ffmpegArgs = $"-y -i \"{inputPath}\" -vf scale=w={targetWidth}:h={targetHeight}:force_original_aspect_ratio=decrease,pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2 -c:v libx264 -crf 23 -preset fast -an \"{outputPath}\"";
+            // Check if hardware acceleration is available
+            bool useHardwareAccel = CheckHardwareAcceleration();
+            
+            // Optimized FFmpeg arguments for speed
+            string ffmpegArgs;
+            if (useHardwareAccel)
+            {
+                // Use hardware acceleration for faster processing
+                ffmpegArgs = $"-y -hwaccel auto -i \"{inputPath}\" -vf scale=w={targetWidth}:h={targetHeight}:force_original_aspect_ratio=decrease,pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2 -c:v h264_nvenc -preset p7 -rc vbr -cq 26 -b:v 5M -maxrate 10M -bufsize 10M -an \"{outputPath}\"";
+                Logger.Log($"VideoNormalizer: Using hardware acceleration for {inputPath}");
+            }
+            else
+            {
+                // Optimized software encoding settings
+                ffmpegArgs = $"-y -i \"{inputPath}\" -vf scale=w={targetWidth}:h={targetHeight}:force_original_aspect_ratio=decrease,pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2 -c:v libx264 -preset ultrafast -crf 28 -tune fastdecode -an \"{outputPath}\"";
+                Logger.Log($"VideoNormalizer: Using software encoding for {inputPath}");
+            }
+            
             Logger.Log($"VideoNormalizer: Normalizing {inputPath} to {outputPath} as {targetWidth}x{targetHeight}");
             Logger.Log($"VideoNormalizer: ffmpeg {ffmpegArgs}");
+            
             try
             {
                 var psi = new ProcessStartInfo
@@ -54,19 +75,123 @@ namespace BackgroundVideoWinForms
                     FileName = "ffmpeg",
                     Arguments = ffmpegArgs,
                     RedirectStandardError = true,
+                    RedirectStandardOutput = true,
                     UseShellExecute = false,
                     CreateNoWindow = true
                 };
+                
                 using (var process = Process.Start(psi))
                 {
+                    // Monitor progress if callback provided
+                    if (progressCallback != null)
+                    {
+                        var progressThread = new Thread(() => MonitorProgress(process, progressCallback));
+                        progressThread.Start();
+                    }
+                    
                     process.WaitForExit();
+                    
+                    if (process.ExitCode != 0)
+                    {
+                        Logger.Log($"VideoNormalizer: FFmpeg failed with exit code {process.ExitCode}");
+                        throw new Exception($"FFmpeg normalization failed with exit code {process.ExitCode}");
+                    }
                 }
-                Logger.Log($"VideoNormalizer: Normalized {outputPath} ({new FileInfo(outputPath).Length} bytes)");
+                
+                var fileInfo = new FileInfo(outputPath);
+                Logger.Log($"VideoNormalizer: Normalized {outputPath} ({fileInfo.Length} bytes)");
             }
             catch (Exception ex)
             {
                 Logger.LogException(ex, $"VideoNormalizer.Normalize {inputPath}");
+                throw;
             }
+        }
+
+        private bool CheckHardwareAcceleration()
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "ffmpeg",
+                    Arguments = "-hide_banner -encoders | findstr nvenc",
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                
+                using (var process = Process.Start(psi))
+                {
+                    string output = process.StandardOutput.ReadToEnd();
+                    process.WaitForExit(3000);
+                    return output.Contains("h264_nvenc");
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private void MonitorProgress(Process process, Action<string> progressCallback)
+        {
+            try
+            {
+                while (!process.HasExited)
+                {
+                    string line = process.StandardError.ReadLine();
+                    if (line != null && line.Contains("time="))
+                    {
+                        // Extract time information from FFmpeg output
+                        var timeMatch = System.Text.RegularExpressions.Regex.Match(line, @"time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})");
+                        if (timeMatch.Success)
+                        {
+                            int hours = int.Parse(timeMatch.Groups[1].Value);
+                            int minutes = int.Parse(timeMatch.Groups[2].Value);
+                            int seconds = int.Parse(timeMatch.Groups[3].Value);
+                            int centiseconds = int.Parse(timeMatch.Groups[4].Value);
+                            
+                            double totalSeconds = hours * 3600 + minutes * 60 + seconds + centiseconds / 100.0;
+                            progressCallback($"Processing: {totalSeconds:F1}s");
+                        }
+                    }
+                    Thread.Sleep(100); // Check every 100ms
+                }
+            }
+            catch
+            {
+                // Ignore errors in progress monitoring
+            }
+        }
+
+        // Batch normalization for multiple files with parallel processing
+        public void NormalizeBatch(string[] inputPaths, string[] outputPaths, int targetWidth, int targetHeight, int maxParallel = 2, Action<int, string> progressCallback = null)
+        {
+            var semaphore = new SemaphoreSlim(maxParallel);
+            var tasks = new List<Task>();
+            
+            for (int i = 0; i < inputPaths.Length; i++)
+            {
+                int index = i;
+                tasks.Add(Task.Run(async () =>
+                {
+                    await semaphore.WaitAsync();
+                    try
+                    {
+                        progressCallback?.Invoke(index, $"Starting normalization {index + 1} of {inputPaths.Length}");
+                        Normalize(inputPaths[index], outputPaths[index], targetWidth, targetHeight, 
+                            (progress) => progressCallback?.Invoke(index, progress));
+                        progressCallback?.Invoke(index, $"Completed normalization {index + 1} of {inputPaths.Length}");
+                    }
+                    finally
+                    {
+                        semaphore.Release();
+                    }
+                }));
+            }
+            
+            Task.WaitAll(tasks.ToArray());
         }
     }
 } 
