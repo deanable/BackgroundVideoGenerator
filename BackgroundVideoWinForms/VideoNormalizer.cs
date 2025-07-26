@@ -55,7 +55,7 @@ namespace BackgroundVideoWinForms
 
         public void Normalize(string inputPath, string outputPath, int targetWidth, int targetHeight, Action<string> progressCallback = null)
         {
-            // Check if hardware acceleration is available
+            // Try hardware acceleration first, fallback to software if it fails
             bool useHardwareAccel = CheckHardwareAcceleration();
             
             // Optimized FFmpeg arguments for speed
@@ -110,7 +110,37 @@ namespace BackgroundVideoWinForms
                     if (process.ExitCode != 0)
                     {
                         Logger.Log($"VideoNormalizer: FFmpeg failed with exit code {process.ExitCode}");
-                        throw new Exception($"FFmpeg normalization failed with exit code {process.ExitCode}");
+                        
+                        // If hardware acceleration failed, try software encoding as fallback
+                        if (useHardwareAccel)
+                        {
+                            Logger.Log($"VideoNormalizer: Hardware acceleration failed, trying software encoding for {inputPath}");
+                            useHardwareAccel = false;
+                            ffmpegArgs = $"-y -i \"{inputPath}\" -vf scale=w={targetWidth}:h={targetHeight}:force_original_aspect_ratio=decrease,pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2 -c:v libx264 -preset ultrafast -crf 28 -tune fastdecode -an \"{outputPath}\"";
+                            
+                            // Try again with software encoding
+                            psi.Arguments = ffmpegArgs;
+                            using (var fallbackProcess = Process.Start(psi))
+                            {
+                                if (progressCallback != null)
+                                {
+                                    var progressThread = new Thread(() => MonitorProgress(fallbackProcess, progressCallback));
+                                    progressThread.Start();
+                                }
+                                
+                                fallbackProcess.WaitForExit();
+                                
+                                if (fallbackProcess.ExitCode != 0)
+                                {
+                                    Logger.Log($"VideoNormalizer: Software encoding also failed with exit code {fallbackProcess.ExitCode}");
+                                    throw new Exception($"FFmpeg normalization failed with exit code {fallbackProcess.ExitCode}");
+                                }
+                            }
+                        }
+                        else
+                        {
+                            throw new Exception($"FFmpeg normalization failed with exit code {process.ExitCode}");
+                        }
                     }
                 }
                 
