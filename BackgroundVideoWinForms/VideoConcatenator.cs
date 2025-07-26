@@ -67,8 +67,8 @@ namespace BackgroundVideoWinForms
                 }
             }
             
-            // Improved FFmpeg command with better settings
-            string ffmpegArgs = $"-y -f concat -safe 0 -i \"{tempListFile}\" -vf scale={resolution}:force_original_aspect_ratio=decrease,pad={resolution}:(ow-iw)/2:(oh-ih)/2 -c:v libx264 -preset fast -crf 23 -an -r 30 -max_muxing_queue_size 1024 \"{outputFile}\"";
+            // Improved FFmpeg command with better settings to prevent duplicate frames
+            string ffmpegArgs = $"-y -f concat -safe 0 -i \"{tempListFile}\" -vf scale={resolution}:force_original_aspect_ratio=decrease,pad={resolution}:(ow-iw)/2:(oh-ih)/2 -c:v libx264 -preset fast -crf 23 -an -r 30 -vsync 1 -max_muxing_queue_size 1024 \"{outputFile}\"";
             Logger.Log($"VideoConcatenator: ffmpeg {ffmpegArgs}");
             
             try
@@ -110,10 +110,12 @@ namespace BackgroundVideoWinForms
                                     if (spaceIdx > 0)
                                         timePart = timePart.Substring(0, spaceIdx);
                                     
-                                    // Calculate progress percentage
+                                    // Calculate progress percentage with bounds checking
                                     if (TimeSpan.TryParse(timePart, out var currentTime) && totalDuration > 0)
                                     {
                                         double progressPercent = (currentTime.TotalSeconds / totalDuration) * 100;
+                                        // Cap progress at 100% to prevent impossible values
+                                        progressPercent = Math.Min(progressPercent, 100.0);
                                         progressCallback($"Encoding: {progressPercent:F1}% ({timePart})");
                                     }
                                     else
@@ -128,7 +130,7 @@ namespace BackgroundVideoWinForms
                     process.BeginErrorReadLine();
                     
                     // Add timeout to prevent infinite processing
-                    if (!process.WaitForExit(600000)) // 10 minute timeout instead of 5 minutes
+                    if (!process.WaitForExit(300000)) // 5 minute timeout to prevent runaway processes
                     {
                         Logger.Log("VideoConcatenator: Process timeout - killing FFmpeg");
                         try { process.Kill(); } catch { }
