@@ -16,16 +16,23 @@ namespace BackgroundVideoWinForms
             var validFiles = new List<string>();
             double totalDuration = 0;
             
+            Logger.Log($"VideoConcatenator: Starting duration check for {inputFiles.Count} files");
+            
             foreach (var file in inputFiles)
             {
+                Logger.Log($"VideoConcatenator: Checking file: {file}");
+                
                 if (File.Exists(file) && new FileInfo(file).Length > 0)
                 {
+                    Logger.Log($"VideoConcatenator: File exists and has content, checking duration...");
                     double duration = GetDuration(file);
+                    Logger.Log($"VideoConcatenator: File {Path.GetFileName(file)} duration: {duration}s");
+                    
                     if (duration > 0 && duration <= 120) // Allow files up to 2 minutes instead of 60 seconds
                     {
                         validFiles.Add(file);
                         totalDuration += duration;
-                        Logger.Log($"VideoConcatenator: Valid file {file} - duration: {duration}s");
+                        Logger.Log($"VideoConcatenator: Added valid file: {Path.GetFileName(file)} (duration: {duration}s, total: {totalDuration}s)");
                     }
                     else
                     {
@@ -37,6 +44,9 @@ namespace BackgroundVideoWinForms
                     Logger.Log($"VideoConcatenator: Skipping invalid or empty file: {file}");
                 }
             }
+            
+            Logger.Log($"VideoConcatenator: Duration check complete - {validFiles.Count} valid files out of {inputFiles.Count} total files");
+            Logger.Log($"VideoConcatenator: Total duration of valid files: {totalDuration}s");
             
             if (validFiles.Count == 0)
             {
@@ -150,6 +160,48 @@ namespace BackgroundVideoWinForms
             {
                 Logger.Log($"GetDuration: Attempting to get duration for {filePath}");
                 
+                // Check if file exists
+                if (!File.Exists(filePath))
+                {
+                    Logger.Log($"GetDuration: File does not exist: {filePath}");
+                    return 0;
+                }
+                
+                var fileInfo = new FileInfo(filePath);
+                Logger.Log($"GetDuration: File exists, size: {fileInfo.Length} bytes");
+                
+                // Test ffprobe availability first
+                Logger.Log("GetDuration: Testing ffprobe availability...");
+                var testPsi = new ProcessStartInfo
+                {
+                    FileName = "ffprobe",
+                    Arguments = "-version",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                
+                try
+                {
+                    using (var testProcess = Process.Start(testPsi))
+                    {
+                        string testOutput = testProcess.StandardOutput.ReadToEnd();
+                        testProcess.WaitForExit(3000);
+                        Logger.Log($"GetDuration: ffprobe test - exit code: {testProcess.ExitCode}, output length: {testOutput?.Length ?? 0}");
+                        if (testProcess.ExitCode != 0)
+                        {
+                            Logger.Log($"GetDuration: ffprobe not available or failed test");
+                            return 0;
+                        }
+                    }
+                }
+                catch (Exception testEx)
+                {
+                    Logger.LogException(testEx, "GetDuration: ffprobe test failed");
+                    return 0;
+                }
+                
                 var psi = new ProcessStartInfo
                 {
                     FileName = "ffprobe",
@@ -164,20 +216,63 @@ namespace BackgroundVideoWinForms
                 
                 using (var process = Process.Start(psi))
                 {
-                    string output = process.StandardOutput.ReadLine();
-                    string error = process.StandardError.ReadLine();
-                    process.WaitForExit(5000); // Increased timeout
+                    if (process == null)
+                    {
+                        Logger.Log("GetDuration: Failed to start ffprobe process");
+                        return 0;
+                    }
                     
-                    Logger.Log($"GetDuration: ffprobe output: '{output}', error: '{error}', exit code: {process.ExitCode}");
+                    // Read all output and error
+                    string output = process.StandardOutput.ReadToEnd();
+                    string error = process.StandardError.ReadToEnd();
                     
-                    if (double.TryParse(output, out double duration))
+                    Logger.Log($"GetDuration: Waiting for ffprobe to exit...");
+                    bool exited = process.WaitForExit(10000); // 10 second timeout
+                    
+                    Logger.Log($"GetDuration: ffprobe process - exited: {exited}, exit code: {process.ExitCode}");
+                    Logger.Log($"GetDuration: ffprobe output: '{output?.Trim()}'");
+                    Logger.Log($"GetDuration: ffprobe error: '{error?.Trim()}'");
+                    
+                    if (!exited)
+                    {
+                        Logger.Log("GetDuration: ffprobe process timed out");
+                        try { process.Kill(); } catch { }
+                        return 0;
+                    }
+                    
+                    if (process.ExitCode != 0)
+                    {
+                        Logger.Log($"GetDuration: ffprobe failed with exit code {process.ExitCode}");
+                        return 0;
+                    }
+                    
+                    if (string.IsNullOrWhiteSpace(output))
+                    {
+                        Logger.Log("GetDuration: ffprobe returned empty output");
+                        return 0;
+                    }
+                    
+                    string trimmedOutput = output.Trim();
+                    Logger.Log($"GetDuration: Attempting to parse duration from: '{trimmedOutput}'");
+                    
+                    if (double.TryParse(trimmedOutput, out double duration))
                     {
                         Logger.Log($"GetDuration: Successfully parsed duration: {duration}s");
                         return duration;
                     }
                     else
                     {
-                        Logger.Log($"GetDuration: Failed to parse duration from output: '{output}'");
+                        Logger.Log($"GetDuration: Failed to parse duration from output: '{trimmedOutput}'");
+                        // Try alternative parsing
+                        if (trimmedOutput.Contains("duration="))
+                        {
+                            var parts = trimmedOutput.Split('=');
+                            if (parts.Length > 1 && double.TryParse(parts[1], out double altDuration))
+                            {
+                                Logger.Log($"GetDuration: Alternative parsing successful: {altDuration}s");
+                                return altDuration;
+                            }
+                        }
                     }
                 }
             }
