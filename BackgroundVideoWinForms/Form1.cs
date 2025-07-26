@@ -33,6 +33,8 @@ namespace BackgroundVideoWinForms
             trackBarDuration.ValueChanged += trackBarDuration_ValueChanged;
             radioButton1080p.CheckedChanged += radioButtonResolution_CheckedChanged;
             radioButton4k.CheckedChanged += radioButtonResolution_CheckedChanged;
+            radioButtonHorizontal.CheckedChanged += radioButtonAspectRatio_CheckedChanged;
+            radioButtonVertical.CheckedChanged += radioButtonAspectRatio_CheckedChanged;
             
             // Set up form closing event to save window position
             this.FormClosing += Form1_FormClosing;
@@ -53,7 +55,7 @@ namespace BackgroundVideoWinForms
             
             string searchTerm = textBoxSearch.Text.Trim();
             int duration = trackBarDuration.Value * 60; // minutes to seconds
-            string resolution = radioButton4k.Checked ? "3840:2160" : "1920:1080";
+            string resolution = GetResolutionString();
             string apiKey = textBoxApiKey.Text.Trim();
 
             if (string.IsNullOrWhiteSpace(apiKey))
@@ -241,6 +243,17 @@ namespace BackgroundVideoWinForms
                     radioButton1080p.Checked = true;
                 }
                 
+                // Load aspect ratio
+                string savedAspectRatio = RegistryHelper.LoadAspectRatio();
+                if (savedAspectRatio == "Vertical")
+                {
+                    radioButtonVertical.Checked = true;
+                }
+                else
+                {
+                    radioButtonHorizontal.Checked = true;
+                }
+                
                 // Load window position and size
                 var (x, y, width, height) = RegistryHelper.LoadWindowPosition();
                 if (x >= 0 && y >= 0)
@@ -270,8 +283,9 @@ namespace BackgroundVideoWinForms
                 string searchTerm = textBoxSearch.Text.Trim();
                 int duration = trackBarDuration.Value;
                 string resolution = radioButton4k.Checked ? "4K" : "1080p";
+                string aspectRatio = radioButtonVertical.Checked ? "Vertical" : "Horizontal";
                 
-                RegistryHelper.SaveAllSettings(apiKey, searchTerm, duration, resolution);
+                RegistryHelper.SaveAllSettings(apiKey, searchTerm, duration, resolution, aspectRatio);
                 
                 // Save window position and size
                 RegistryHelper.SaveWindowPosition(this.Location.X, this.Location.Y, this.Width, this.Height);
@@ -313,6 +327,30 @@ namespace BackgroundVideoWinForms
             }
         }
 
+        private void radioButtonAspectRatio_CheckedChanged(object sender, EventArgs e)
+        {
+            if (sender is RadioButton radioButton && radioButton.Checked)
+            {
+                string aspectRatio = radioButton == radioButtonVertical ? "Vertical" : "Horizontal";
+                RegistryHelper.SaveAspectRatio(aspectRatio);
+            }
+        }
+
+        private string GetResolutionString()
+        {
+            bool is4K = radioButton4k.Checked;
+            bool isVertical = radioButtonVertical.Checked;
+            
+            if (is4K)
+            {
+                return isVertical ? "2160:3840" : "3840:2160";
+            }
+            else
+            {
+                return isVertical ? "1080:1920" : "1920:1080";
+            }
+        }
+
         private void Form1_FormClosing(object sender, FormClosingEventArgs e)
         {
             SaveSettingsToRegistry();
@@ -324,7 +362,18 @@ namespace BackgroundVideoWinForms
             string tempDir = Path.Combine(Path.GetTempPath(), "pexels_bgvid");
             Directory.CreateDirectory(tempDir);
             int targetWidth = 1920, targetHeight = 1080;
-            if (radioButton4k.Checked) { targetWidth = 3840; targetHeight = 2160; }
+            if (radioButton4k.Checked) 
+            { 
+                targetWidth = 3840; 
+                targetHeight = 2160; 
+            }
+            if (radioButtonVertical.Checked)
+            {
+                // Swap width and height for vertical orientation
+                int temp = targetWidth;
+                targetWidth = targetHeight;
+                targetHeight = temp;
+            }
 
             // Improved clip selection with randomization and better duration management
             var selectedClips = new List<PexelsVideoClip>();

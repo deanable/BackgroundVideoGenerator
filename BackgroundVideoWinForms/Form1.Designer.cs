@@ -21,6 +21,9 @@ namespace BackgroundVideoWinForms
             groupBoxResolution = new System.Windows.Forms.GroupBox();
             radioButton1080p = new System.Windows.Forms.RadioButton();
             radioButton4k = new System.Windows.Forms.RadioButton();
+            groupBoxAspectRatio = new System.Windows.Forms.GroupBox();
+            radioButtonHorizontal = new System.Windows.Forms.RadioButton();
+            radioButtonVertical = new System.Windows.Forms.RadioButton();
             buttonStart = new System.Windows.Forms.Button();
             progressBar = new System.Windows.Forms.ProgressBar();
             labelStatus = new System.Windows.Forms.Label();
@@ -28,6 +31,7 @@ namespace BackgroundVideoWinForms
             textBoxApiKey = new System.Windows.Forms.TextBox();
             ((System.ComponentModel.ISupportInitialize)(trackBarDuration)).BeginInit();
             groupBoxResolution.SuspendLayout();
+            groupBoxAspectRatio.SuspendLayout();
             SuspendLayout();
             // 
             // labelApiKey
@@ -88,6 +92,11 @@ namespace BackgroundVideoWinForms
             groupBoxResolution.Controls.Clear();
             radioButton1080p = new System.Windows.Forms.RadioButton();
             radioButton4k = new System.Windows.Forms.RadioButton();
+            
+            // groupBoxAspectRatio
+            groupBoxAspectRatio.Controls.Clear();
+            radioButtonHorizontal = new System.Windows.Forms.RadioButton();
+            radioButtonVertical = new System.Windows.Forms.RadioButton();
             // 1080p
             radioButton1080p.AutoSize = true;
             radioButton1080p.Checked = true;
@@ -106,18 +115,49 @@ namespace BackgroundVideoWinForms
             radioButton4k.TabIndex = 1;
             radioButton4k.Text = "4K";
             radioButton4k.UseVisualStyleBackColor = true;
+            
+            // radioButtonHorizontal
+            radioButtonHorizontal.AutoSize = true;
+            radioButtonHorizontal.Checked = true;
+            radioButtonHorizontal.Location = new System.Drawing.Point(6, 22);
+            radioButtonHorizontal.Name = "radioButtonHorizontal";
+            radioButtonHorizontal.Size = new System.Drawing.Size(78, 19);
+            radioButtonHorizontal.TabIndex = 0;
+            radioButtonHorizontal.TabStop = true;
+            radioButtonHorizontal.Text = "Horizontal";
+            radioButtonHorizontal.UseVisualStyleBackColor = true;
+            
+            // radioButtonVertical
+            radioButtonVertical.AutoSize = true;
+            radioButtonVertical.Location = new System.Drawing.Point(6, 47);
+            radioButtonVertical.Name = "radioButtonVertical";
+            radioButtonVertical.Size = new System.Drawing.Size(65, 19);
+            radioButtonVertical.TabIndex = 1;
+            radioButtonVertical.Text = "Vertical";
+            radioButtonVertical.UseVisualStyleBackColor = true;
             groupBoxResolution.Controls.Add(radioButton1080p);
             groupBoxResolution.Controls.Add(radioButton4k);
+            
+            groupBoxAspectRatio.Controls.Add(radioButtonHorizontal);
+            groupBoxAspectRatio.Controls.Add(radioButtonVertical);
             groupBoxResolution.Location = new System.Drawing.Point(12, 160);
             groupBoxResolution.Name = "groupBoxResolution";
             groupBoxResolution.Size = new System.Drawing.Size(200, 83);
             groupBoxResolution.TabIndex = 4;
             groupBoxResolution.TabStop = false;
             groupBoxResolution.Text = "Output Resolution";
+            
+            // groupBoxAspectRatio
+            groupBoxAspectRatio.Location = new System.Drawing.Point(12, 250);
+            groupBoxAspectRatio.Name = "groupBoxAspectRatio";
+            groupBoxAspectRatio.Size = new System.Drawing.Size(200, 83);
+            groupBoxAspectRatio.TabIndex = 5;
+            groupBoxAspectRatio.TabStop = false;
+            groupBoxAspectRatio.Text = "Aspect Ratio";
             // 
             // buttonStart
             // 
-            buttonStart.Location = new System.Drawing.Point(12, 260);
+            buttonStart.Location = new System.Drawing.Point(12, 350);
             buttonStart.Name = "buttonStart";
             buttonStart.Size = new System.Drawing.Size(330, 30);
             buttonStart.TabIndex = 5;
@@ -127,7 +167,7 @@ namespace BackgroundVideoWinForms
             // 
             // progressBar
             // 
-            progressBar.Location = new System.Drawing.Point(12, 300);
+            progressBar.Location = new System.Drawing.Point(12, 390);
             progressBar.Name = "progressBar";
             progressBar.Size = new System.Drawing.Size(330, 23);
             progressBar.TabIndex = 6;
@@ -135,7 +175,7 @@ namespace BackgroundVideoWinForms
             // labelStatus
             // 
             labelStatus.AutoSize = true;
-            labelStatus.Location = new System.Drawing.Point(12, 330);
+            labelStatus.Location = new System.Drawing.Point(12, 420);
             labelStatus.Name = "labelStatus";
             labelStatus.Size = new System.Drawing.Size(0, 15);
             labelStatus.TabIndex = 7;
@@ -144,11 +184,12 @@ namespace BackgroundVideoWinForms
             // 
             AutoScaleDimensions = new System.Drawing.SizeF(7F, 15F);
             AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            ClientSize = new System.Drawing.Size(360, 360);
+            ClientSize = new System.Drawing.Size(360, 450);
             Controls.Add(labelStatus);
             Controls.Add(progressBar);
             Controls.Add(buttonStart);
             Controls.Add(groupBoxResolution);
+            Controls.Add(groupBoxAspectRatio);
             Controls.Add(trackBarDuration);
             Controls.Add(labelDuration);
             Controls.Add(textBoxSearch);
@@ -162,6 +203,8 @@ namespace BackgroundVideoWinForms
             ((System.ComponentModel.ISupportInitialize)(trackBarDuration)).EndInit();
             groupBoxResolution.ResumeLayout(false);
             groupBoxResolution.PerformLayout();
+            groupBoxAspectRatio.ResumeLayout(false);
+            groupBoxAspectRatio.PerformLayout();
             ResumeLayout(false);
             PerformLayout();
         }
@@ -173,6 +216,9 @@ namespace BackgroundVideoWinForms
         private System.Windows.Forms.GroupBox groupBoxResolution;
         private System.Windows.Forms.RadioButton radioButton1080p;
         private System.Windows.Forms.RadioButton radioButton4k;
+        private System.Windows.Forms.GroupBox groupBoxAspectRatio;
+        private System.Windows.Forms.RadioButton radioButtonHorizontal;
+        private System.Windows.Forms.RadioButton radioButtonVertical;
         private System.Windows.Forms.Button buttonStart;
         private System.Windows.Forms.ProgressBar progressBar;
         private System.Windows.Forms.Label labelStatus;

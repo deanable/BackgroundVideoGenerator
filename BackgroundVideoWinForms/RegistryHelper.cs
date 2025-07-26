@@ -11,6 +11,7 @@ namespace BackgroundVideoWinForms
         private const string REGISTRY_SEARCH_TERM = "SearchTerm";
         private const string REGISTRY_DURATION = "Duration";
         private const string REGISTRY_RESOLUTION = "Resolution";
+        private const string REGISTRY_ASPECT_RATIO = "AspectRatio";
         private const string REGISTRY_WINDOW_WIDTH = "WindowWidth";
         private const string REGISTRY_WINDOW_HEIGHT = "WindowHeight";
         private const string REGISTRY_WINDOW_X = "WindowX";
@@ -20,6 +21,7 @@ namespace BackgroundVideoWinForms
         private const string DEFAULT_SEARCH_TERM = "city";
         private const int DEFAULT_DURATION = 2;
         private const string DEFAULT_RESOLUTION = "1080p";
+        private const string DEFAULT_ASPECT_RATIO = "Horizontal";
         private const int DEFAULT_WINDOW_WIDTH = 600;
         private const int DEFAULT_WINDOW_HEIGHT = 400;
 
@@ -68,6 +70,18 @@ namespace BackgroundVideoWinForms
         public static string LoadResolution()
         {
             return LoadStringValue(REGISTRY_RESOLUTION, DEFAULT_RESOLUTION);
+        }
+        #endregion
+
+        #region Aspect Ratio
+        public static void SaveAspectRatio(string aspectRatio)
+        {
+            SaveStringValue(REGISTRY_ASPECT_RATIO, aspectRatio);
+        }
+
+        public static string LoadAspectRatio()
+        {
+            return LoadStringValue(REGISTRY_ASPECT_RATIO, DEFAULT_ASPECT_RATIO);
         }
         #endregion
 
@@ -171,12 +185,13 @@ namespace BackgroundVideoWinForms
         #endregion
 
         #region Settings Management
-        public static void SaveAllSettings(string apiKey, string searchTerm, int duration, string resolution)
+        public static void SaveAllSettings(string apiKey, string searchTerm, int duration, string resolution, string aspectRatio)
         {
             SaveApiKey(apiKey);
             SaveSearchTerm(searchTerm);
             SaveDuration(duration);
             SaveResolution(resolution);
+            SaveAspectRatio(aspectRatio);
         }
 
         public static void ClearAllSettings()
