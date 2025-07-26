@@ -14,9 +14,17 @@ namespace BackgroundVideoWinForms
             Logger.Log($"VideoNormalizer: Probing dimensions for {filePath}");
             try
             {
+                string ffprobePath = @"C:\Program Files (x86)\ffmpeg-2025-07-23-git-829680f96a-full_build\bin\ffprobe.exe";
+                
+                if (!File.Exists(ffprobePath))
+                {
+                    Logger.Log($"VideoNormalizer: ffprobe not found at {ffprobePath}");
+                    return (0, 0);
+                }
+                
                 var psi = new ProcessStartInfo
                 {
-                    FileName = "ffprobe",
+                    FileName = ffprobePath,
                     Arguments = $"-v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 \"{filePath}\"",
                     RedirectStandardOutput = true,
                     UseShellExecute = false,
@@ -70,9 +78,17 @@ namespace BackgroundVideoWinForms
             
             try
             {
+                string ffmpegPath = @"C:\Program Files (x86)\ffmpeg-2025-07-23-git-829680f96a-full_build\bin\ffmpeg.exe";
+                
+                if (!File.Exists(ffmpegPath))
+                {
+                    Logger.Log($"VideoNormalizer: ffmpeg not found at {ffmpegPath}");
+                    throw new Exception($"FFmpeg not found at {ffmpegPath}");
+                }
+                
                 var psi = new ProcessStartInfo
                 {
-                    FileName = "ffmpeg",
+                    FileName = ffmpegPath,
                     Arguments = ffmpegArgs,
                     RedirectStandardError = true,
                     RedirectStandardOutput = true,
@@ -112,9 +128,17 @@ namespace BackgroundVideoWinForms
         {
             try
             {
+                string ffmpegPath = @"C:\Program Files (x86)\ffmpeg-2025-07-23-git-829680f96a-full_build\bin\ffmpeg.exe";
+                
+                if (!File.Exists(ffmpegPath))
+                {
+                    Logger.Log($"VideoNormalizer: ffmpeg not found at {ffmpegPath}");
+                    return false;
+                }
+                
                 var psi = new ProcessStartInfo
                 {
-                    FileName = "ffmpeg",
+                    FileName = ffmpegPath,
                     Arguments = "-hide_banner -encoders | findstr nvenc",
                     RedirectStandardOutput = true,
                     UseShellExecute = false,

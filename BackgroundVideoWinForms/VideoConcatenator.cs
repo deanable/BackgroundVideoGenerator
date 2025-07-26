@@ -73,9 +73,18 @@ namespace BackgroundVideoWinForms
             
             try
             {
+                string ffmpegPath = @"C:\Program Files (x86)\ffmpeg-2025-07-23-git-829680f96a-full_build\bin\ffmpeg.exe";
+                
+                if (!File.Exists(ffmpegPath))
+                {
+                    Logger.Log($"VideoConcatenator: ffmpeg not found at {ffmpegPath}");
+                    progressCallback?.Invoke($"Error: FFmpeg not found at {ffmpegPath}");
+                    return;
+                }
+                
                 var psi = new ProcessStartInfo
                 {
-                    FileName = "ffmpeg",
+                    FileName = ffmpegPath,
                     Arguments = ffmpegArgs,
                     RedirectStandardError = true,
                     UseShellExecute = false,
@@ -172,9 +181,17 @@ namespace BackgroundVideoWinForms
                 
                 // Test ffprobe availability first
                 Logger.Log("GetDuration: Testing ffprobe availability...");
+                string ffprobePath = @"C:\Program Files (x86)\ffmpeg-2025-07-23-git-829680f96a-full_build\bin\ffprobe.exe";
+                
+                if (!File.Exists(ffprobePath))
+                {
+                    Logger.Log($"GetDuration: ffprobe not found at {ffprobePath}");
+                    return 0;
+                }
+                
                 var testPsi = new ProcessStartInfo
                 {
-                    FileName = "ffprobe",
+                    FileName = ffprobePath,
                     Arguments = "-version",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
@@ -204,7 +221,7 @@ namespace BackgroundVideoWinForms
                 
                 var psi = new ProcessStartInfo
                 {
-                    FileName = "ffprobe",
+                    FileName = ffprobePath,
                     Arguments = $"-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{filePath}\"",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
