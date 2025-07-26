@@ -158,8 +158,6 @@ namespace BackgroundVideoWinForms
                     }
                 }
                 catch (Exception ex) { Logger.LogException(ex, "Open output folder"); }
-
-                MessageBox.Show($"Pipeline log saved to:\n{Logger.LogFilePath}", "Debug Log", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
