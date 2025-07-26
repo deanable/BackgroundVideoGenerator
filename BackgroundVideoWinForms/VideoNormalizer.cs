@@ -96,6 +96,9 @@ namespace BackgroundVideoWinForms
                     CreateNoWindow = true
                 };
                 
+                var startTime = DateTime.Now;
+                Logger.Log($"VideoNormalizer: Starting normalization of {Path.GetFileName(inputPath)} at {startTime:HH:mm:ss.fff}");
+                
                 using (var process = Process.Start(psi))
                 {
                     // Monitor progress if callback provided
@@ -143,6 +146,11 @@ namespace BackgroundVideoWinForms
                         }
                     }
                 }
+                
+                var endTime = DateTime.Now;
+                var actualDuration = endTime - startTime;
+                Logger.Log($"VideoNormalizer: Completed normalization of {Path.GetFileName(inputPath)} at {endTime:HH:mm:ss.fff}");
+                Logger.Log($"VideoNormalizer: Normalization time: {actualDuration:mm\\:ss\\.ff} ({actualDuration.TotalSeconds:F1} seconds)");
                 
                 var fileInfo = new FileInfo(outputPath);
                 Logger.Log($"VideoNormalizer: Normalized {outputPath} ({fileInfo.Length} bytes)");

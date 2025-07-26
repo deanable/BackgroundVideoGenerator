@@ -94,6 +94,8 @@ namespace BackgroundVideoWinForms
                 using (var process = Process.Start(psi))
                 {
                     var startTime = DateTime.Now;
+                    Logger.Log($"VideoConcatenator: Starting FFmpeg concatenation at {startTime:HH:mm:ss.fff}");
+                    Logger.Log($"VideoConcatenator: Expected total duration: {totalDuration:F1} seconds");
                     process.ErrorDataReceived += (s, e) =>
                     {
                         if (e.Data != null)
@@ -101,6 +103,8 @@ namespace BackgroundVideoWinForms
                             Logger.Log($"FFmpeg: {e.Data}");
                             if (progressCallback != null)
                             {
+                                var currentTime = DateTime.Now;
+                                var elapsed = currentTime - startTime;
                                 var line = e.Data;
                                 var idx = line.IndexOf("time=");
                                 if (idx >= 0)
@@ -111,16 +115,16 @@ namespace BackgroundVideoWinForms
                                         timePart = timePart.Substring(0, spaceIdx);
                                     
                                     // Calculate progress percentage with bounds checking
-                                    if (TimeSpan.TryParse(timePart, out var currentTime) && totalDuration > 0)
+                                    if (TimeSpan.TryParse(timePart, out var ffmpegTime) && totalDuration > 0)
                                     {
-                                        double progressPercent = (currentTime.TotalSeconds / totalDuration) * 100;
+                                        double progressPercent = (ffmpegTime.TotalSeconds / totalDuration) * 100;
                                         // Cap progress at 100% to prevent impossible values
                                         progressPercent = Math.Min(progressPercent, 100.0);
-                                        progressCallback($"Encoding: {progressPercent.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)}% ({timePart})");
+                                        progressCallback($"Encoding: {progressPercent.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)}% (FFmpeg: {timePart}, Elapsed: {elapsed:mm\\:ss\\.ff})");
                                     }
                                     else
                                     {
-                                        progressCallback($"Encoding: {timePart}");
+                                        progressCallback($"Encoding: {timePart} (Elapsed: {elapsed:mm\\:ss\\.ff})");
                                     }
                                 }
                             }
@@ -139,7 +143,10 @@ namespace BackgroundVideoWinForms
                     }
                     
                     var endTime = DateTime.Now;
-                    Logger.Log($"VideoConcatenator: Process completed in {(endTime - startTime).TotalSeconds:F1}s");
+                    var actualDuration = endTime - startTime;
+                    Logger.Log($"VideoConcatenator: Process completed at {endTime:HH:mm:ss.fff}");
+                    Logger.Log($"VideoConcatenator: Actual processing time: {actualDuration:mm\\:ss\\.ff} ({actualDuration.TotalSeconds:F1} seconds)");
+                    Logger.Log($"VideoConcatenator: Expected vs Actual - Expected: {totalDuration:F1}s, Actual: {actualDuration.TotalSeconds:F1}s");
                 }
                 
                 if (File.Exists(outputFile))

@@ -181,7 +181,7 @@ namespace BackgroundVideoWinForms
             // 
             AutoScaleDimensions = new System.Drawing.SizeF(7F, 15F);
             AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            ClientSize = new System.Drawing.Size(428, 290);
+            ClientSize = new System.Drawing.Size(424, 327);
             Controls.Add(labelStatus);
             Controls.Add(progressBar);
             Controls.Add(buttonStart);
