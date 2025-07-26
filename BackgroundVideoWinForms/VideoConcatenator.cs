@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System;
+using System.Linq;
 
 namespace BackgroundVideoWinForms
 {
@@ -10,36 +11,43 @@ namespace BackgroundVideoWinForms
         public void Concatenate(List<string> inputFiles, string outputFile, string resolution, Action<string> progressCallback)
         {
             Logger.Log($"VideoConcatenator: Starting concatenation to {outputFile} with resolution {resolution}");
+            
             // Validate input files
             var validFiles = new List<string>();
+            double totalDuration = 0;
+            
             foreach (var file in inputFiles)
             {
                 if (File.Exists(file) && new FileInfo(file).Length > 0)
                 {
-                    validFiles.Add(file);
+                    double duration = GetDuration(file);
+                    if (duration > 0 && duration <= 120) // Allow files up to 2 minutes instead of 60 seconds
+                    {
+                        validFiles.Add(file);
+                        totalDuration += duration;
+                        Logger.Log($"VideoConcatenator: Valid file {file} - duration: {duration}s");
+                    }
+                    else
+                    {
+                        Logger.Log($"VideoConcatenator: Skipping file with invalid duration {duration}s: {file}");
+                    }
                 }
                 else
                 {
                     Logger.Log($"VideoConcatenator: Skipping invalid or empty file: {file}");
-                    progressCallback?.Invoke($"Warning: Skipping invalid or empty file: {file}");
                 }
             }
+            
             if (validFiles.Count == 0)
             {
                 Logger.Log($"VideoConcatenator: No valid input files for concatenation.");
                 progressCallback?.Invoke("Error: No valid input files for concatenation.");
                 return;
             }
-            // Log concat list and durations
-            string debugLog = Path.Combine(Path.GetTempPath(), $"concat_debug_{Guid.NewGuid()}.txt");
-            using (var log = new StreamWriter(debugLog))
-            {
-                foreach (var file in validFiles)
-                {
-                    log.WriteLine($"{file} - {GetDuration(file)}s");
-                }
-            }
-            Logger.Log($"VideoConcatenator: Concat list logged to {debugLog}");
+            
+            Logger.Log($"VideoConcatenator: Total duration of {validFiles.Count} files: {totalDuration:F1}s");
+            
+            // Create a more robust concatenation command
             string tempListFile = Path.Combine(Path.GetTempPath(), $"pexels_concat_{Guid.NewGuid()}.txt");
             using (var sw = new StreamWriter(tempListFile))
             {
@@ -48,9 +56,11 @@ namespace BackgroundVideoWinForms
                     sw.WriteLine($"file '{file.Replace("'", "'\\''")}'");
                 }
             }
-            // Remove -vsync 2 from the FFmpeg command
-            string ffmpegArgs = $"-y -f concat -safe 0 -i \"{tempListFile}\" -vf scale={resolution} -c:v libx264 -preset fast -crf 23 -an -r 30 \"{outputFile}\"";
+            
+            // Improved FFmpeg command with better settings
+            string ffmpegArgs = $"-y -f concat -safe 0 -i \"{tempListFile}\" -vf scale={resolution}:force_original_aspect_ratio=decrease,pad={resolution}:(ow-iw)/2:(oh-ih)/2 -c:v libx264 -preset fast -crf 23 -an -r 30 -max_muxing_queue_size 1024 \"{outputFile}\"";
             Logger.Log($"VideoConcatenator: ffmpeg {ffmpegArgs}");
+            
             try
             {
                 var psi = new ProcessStartInfo
@@ -61,8 +71,10 @@ namespace BackgroundVideoWinForms
                     UseShellExecute = false,
                     CreateNoWindow = true
                 };
+                
                 using (var process = Process.Start(psi))
                 {
+                    var startTime = DateTime.Now;
                     process.ErrorDataReceived += (s, e) =>
                     {
                         if (e.Data != null)
@@ -78,21 +90,58 @@ namespace BackgroundVideoWinForms
                                     var spaceIdx = timePart.IndexOf(' ');
                                     if (spaceIdx > 0)
                                         timePart = timePart.Substring(0, spaceIdx);
-                                    progressCallback(timePart);
+                                    
+                                    // Calculate progress percentage
+                                    if (TimeSpan.TryParse(timePart, out var currentTime) && totalDuration > 0)
+                                    {
+                                        double progressPercent = (currentTime.TotalSeconds / totalDuration) * 100;
+                                        progressCallback($"Encoding: {progressPercent:F1}% ({timePart})");
+                                    }
+                                    else
+                                    {
+                                        progressCallback($"Encoding: {timePart}");
+                                    }
                                 }
                             }
                         }
                     };
+                    
                     process.BeginErrorReadLine();
-                    process.WaitForExit();
+                    
+                    // Add timeout to prevent infinite processing
+                    if (!process.WaitForExit(600000)) // 10 minute timeout instead of 5 minutes
+                    {
+                        Logger.Log("VideoConcatenator: Process timeout - killing FFmpeg");
+                        try { process.Kill(); } catch { }
+                        progressCallback?.Invoke("Error: Process timeout");
+                        return;
+                    }
+                    
+                    var endTime = DateTime.Now;
+                    Logger.Log($"VideoConcatenator: Process completed in {(endTime - startTime).TotalSeconds:F1}s");
                 }
-                Logger.Log($"VideoConcatenator: Output file {outputFile} ({(File.Exists(outputFile) ? new FileInfo(outputFile).Length : 0)} bytes)");
+                
+                if (File.Exists(outputFile))
+                {
+                    var fileInfo = new FileInfo(outputFile);
+                    Logger.Log($"VideoConcatenator: Output file {outputFile} ({fileInfo.Length} bytes)");
+                    progressCallback?.Invoke($"Complete: {fileInfo.Length / 1024 / 1024:F1}MB");
+                }
+                else
+                {
+                    Logger.Log("VideoConcatenator: Output file was not created");
+                    progressCallback?.Invoke("Error: Output file not created");
+                }
             }
             catch (Exception ex)
             {
                 Logger.LogException(ex, $"VideoConcatenator.Concatenate {outputFile}");
+                progressCallback?.Invoke($"Error: {ex.Message}");
             }
-            try { File.Delete(tempListFile); } catch { }
+            finally
+            {
+                try { File.Delete(tempListFile); } catch { }
+            }
         }
 
         private double GetDuration(string filePath)
@@ -110,12 +159,15 @@ namespace BackgroundVideoWinForms
                 using (var process = Process.Start(psi))
                 {
                     string output = process.StandardOutput.ReadLine();
-                    process.WaitForExit(2000);
+                    process.WaitForExit(5000); // Increased timeout
                     if (double.TryParse(output, out double duration))
                         return duration;
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Logger.LogException(ex, $"GetDuration: Error getting duration for {filePath}");
+            }
             return 0;
         }
     }

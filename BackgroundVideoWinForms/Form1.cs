@@ -166,15 +166,41 @@ namespace BackgroundVideoWinForms
             int targetWidth = 1920, targetHeight = 1080;
             if (radioButton4k.Checked) { targetWidth = 3840; targetHeight = 2160; }
 
+            // Improved clip selection with better duration management
             var selectedClips = new List<PexelsVideoClip>();
             int accumulatedDuration = 0;
+            int maxClips = 15; // Increased from 10 to allow more clips
+            
             foreach (var clip in clips)
             {
-                if (accumulatedDuration >= totalDuration || selectedClips.Count >= 20)
+                // Skip clips that are too long (more than 60 seconds instead of 30)
+                if (clip.Duration > 60)
+                {
+                    Logger.Log($"Skipping clip with duration {clip.Duration}s (too long)");
+                    continue;
+                }
+                
+                // Stop if we have enough duration or too many clips
+                if (accumulatedDuration >= totalDuration || selectedClips.Count >= maxClips)
                     break;
-                accumulatedDuration += clip.Duration;
-                selectedClips.Add(clip);
+                    
+                // Allow exceeding target by up to 20% instead of 10%
+                if (accumulatedDuration + clip.Duration <= totalDuration * 1.2)
+                {
+                    accumulatedDuration += clip.Duration;
+                    selectedClips.Add(clip);
+                    Logger.Log($"Selected clip: {clip.Duration}s (total: {accumulatedDuration}s)");
+                }
             }
+            
+            Logger.Log($"Selected {selectedClips.Count} clips with total duration {accumulatedDuration}s (target: {totalDuration}s)");
+            
+            if (selectedClips.Count == 0)
+            {
+                Logger.Log("No suitable clips found");
+                return downloadedFiles;
+            }
+            
             int clipsToProcess = selectedClips.Count;
 
             // Download phase
@@ -196,7 +222,7 @@ namespace BackgroundVideoWinForms
                 labelStatus.Invoke((System.Action)(() => {
                     labelStatus.Text = $"Downloading {i + 1} of {clipsToProcess}: {Path.GetFileName(fileName)}";
                 }));
-                Logger.Log($"Download phase: Starting download {i + 1} of {clipsToProcess}: {clip.Url}");
+                Logger.Log($"Download phase: Starting download {i + 1} of {clipsToProcess}: {clip.Url} (duration: {clip.Duration}s)");
                 await videoDownloader.DownloadAsync(clip, fileName);
                 sw.Stop();
                 downloadTimes.Add(sw.Elapsed.TotalSeconds);
