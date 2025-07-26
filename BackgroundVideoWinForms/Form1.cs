@@ -77,7 +77,7 @@ namespace BackgroundVideoWinForms
             {
                 // 1. Query Pexels API for video clips matching searchTerm
                 Logger.Log($"ButtonStart_Click: Searching for '{searchTerm}' with duration {duration}s and resolution {resolution}");
-                var clips = await pexelsService.SearchVideosAsync(searchTerm, apiKey);
+                var clips = await pexelsService.SearchVideosAsync(searchTerm, apiKey, duration);
                 if (clips == null || clips.Count == 0)
                 {
                     Logger.Log("ButtonStart_Click: No videos found for the search term");

@@ -20,7 +20,7 @@ namespace BackgroundVideoWinForms
     {
         private const string PEXELS_API_URL = "https://api.pexels.com/videos/search";
 
-        public async Task<List<PexelsVideoClip>> SearchVideosAsync(string searchTerm, string apiKey)
+        public async Task<List<PexelsVideoClip>> SearchVideosAsync(string searchTerm, string apiKey, int targetDurationSeconds = 60)
         {
             Logger.Log($"PexelsService: Searching for '{searchTerm}'");
             var result = new List<PexelsVideoClip>();
@@ -46,10 +46,11 @@ namespace BackgroundVideoWinForms
                         {
                             int duration = video.GetProperty("duration").GetInt32();
                             
-                            // Skip videos that are too long or too short
-                            if (duration < 3 || duration > 60)
+                            // Allow longer videos when target duration is higher
+                            int maxDuration = Math.Max(60, targetDurationSeconds / 2); // Allow up to half the target duration
+                            if (duration < 3 || duration > maxDuration)
                             {
-                                Logger.Log($"Skipping video with duration {duration}s (outside acceptable range 3-60s)");
+                                Logger.Log($"Skipping video with duration {duration}s (outside acceptable range 3-{maxDuration}s)");
                                 continue;
                             }
                             
