@@ -11,9 +11,12 @@ namespace BackgroundVideoWinForms
             Logger.Log($"VideoNormalizer: Probing dimensions for {filePath}");
             try
             {
+                // Use the full path to ffprobe.exe in the application directory
+                string ffprobePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffprobe.exe");
+                
                 var psi = new ProcessStartInfo
                 {
-                    FileName = "ffprobe",
+                    FileName = ffprobePath,
                     Arguments = $"-v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 \"{filePath}\"",
                     RedirectStandardOutput = true,
                     UseShellExecute = false,
@@ -49,9 +52,12 @@ namespace BackgroundVideoWinForms
             Logger.Log($"VideoNormalizer: ffmpeg {ffmpegArgs}");
             try
             {
+                // Use the full path to ffmpeg.exe in the application directory
+                string ffmpegPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg.exe");
+                
                 var psi = new ProcessStartInfo
                 {
-                    FileName = "ffmpeg",
+                    FileName = ffmpegPath,
                     Arguments = ffmpegArgs,
                     RedirectStandardError = true,
                     UseShellExecute = false,

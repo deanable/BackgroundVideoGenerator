@@ -63,9 +63,12 @@ namespace BackgroundVideoWinForms
             
             try
             {
+                // Use the full path to ffmpeg.exe in the application directory
+                string ffmpegPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg.exe");
+                
                 var psi = new ProcessStartInfo
                 {
-                    FileName = "ffmpeg",
+                    FileName = ffmpegPath,
                     Arguments = ffmpegArgs,
                     RedirectStandardError = true,
                     UseShellExecute = false,
@@ -148,9 +151,12 @@ namespace BackgroundVideoWinForms
         {
             try
             {
+                // Use the full path to ffprobe.exe in the application directory
+                string ffprobePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffprobe.exe");
+                
                 var psi = new ProcessStartInfo
                 {
-                    FileName = "ffprobe",
+                    FileName = ffprobePath,
                     Arguments = $"-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{filePath}\"",
                     RedirectStandardOutput = true,
                     UseShellExecute = false,
