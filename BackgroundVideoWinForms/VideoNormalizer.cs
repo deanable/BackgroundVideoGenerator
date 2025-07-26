@@ -166,7 +166,7 @@ namespace BackgroundVideoWinForms
         }
 
         // Batch normalization for multiple files with parallel processing
-        public void NormalizeBatch(string[] inputPaths, string[] outputPaths, int targetWidth, int targetHeight, int maxParallel = 2, Action<int, string> progressCallback = null)
+        public async Task NormalizeBatchAsync(string[] inputPaths, string[] outputPaths, int targetWidth, int targetHeight, int maxParallel = 2, Action<int, string> progressCallback = null)
         {
             var semaphore = new SemaphoreSlim(maxParallel);
             var tasks = new List<Task>();
@@ -180,8 +180,8 @@ namespace BackgroundVideoWinForms
                     try
                     {
                         progressCallback?.Invoke(index, $"Starting normalization {index + 1} of {inputPaths.Length}");
-                        Normalize(inputPaths[index], outputPaths[index], targetWidth, targetHeight, 
-                            (progress) => progressCallback?.Invoke(index, progress));
+                        await Task.Run(() => Normalize(inputPaths[index], outputPaths[index], targetWidth, targetHeight, 
+                            (progress) => progressCallback?.Invoke(index, progress)));
                         progressCallback?.Invoke(index, $"Completed normalization {index + 1} of {inputPaths.Length}");
                     }
                     finally
@@ -191,7 +191,13 @@ namespace BackgroundVideoWinForms
                 }));
             }
             
-            Task.WaitAll(tasks.ToArray());
+            await Task.WhenAll(tasks.ToArray());
+        }
+        
+        // Synchronous version for backward compatibility
+        public void NormalizeBatch(string[] inputPaths, string[] outputPaths, int targetWidth, int targetHeight, int maxParallel = 2, Action<int, string> progressCallback = null)
+        {
+            NormalizeBatchAsync(inputPaths, outputPaths, targetWidth, targetHeight, maxParallel, progressCallback).Wait();
         }
     }
 } 
