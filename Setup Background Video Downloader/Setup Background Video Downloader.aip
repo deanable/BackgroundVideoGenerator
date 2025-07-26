@@ -33,6 +33,7 @@
   <COMPONENT cid="caphyon.advinst.msicomp.MsiDirsComponent">
     <ROW Directory="APPDIR" Directory_Parent="TARGETDIR" DefaultDir="APPDIR:." IsPseudoRoot="1" DirectoryOptions="3"/>
     <ROW Directory="BackgroundVideoWinForms_Dir" Directory_Parent="APPDIR" DefaultDir="BACKGR~1|BackgroundVideoWinForms" DirectoryOptions="3"/>
+    <ROW Directory="DESKTOPDIR" Directory_Parent="TARGETDIR" DefaultDir="DesktopFolder" DirectoryOptions="3"/>
     <ROW Directory="TARGETDIR" DefaultDir="SourceDir"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.SideBySideGuidComponent">
@@ -43,6 +44,7 @@
     <ROW Component="APPDIR" ComponentId="{1C503271-CEAA-49ED-B201-CE88343F79AE}" Directory_="APPDIR" Attributes="0"/>
     <ROW Component="BackgroundVideoWinForms_PrimaryOutput" ComponentId="{9ED85CAD-E84D-4569-8ADF-DE880EE655B2}" Directory_="BackgroundVideoWinForms_Dir" Attributes="0" KeyPath="BackgroundVideoWinForms.dll"/>
     <ROW Component="BackgroundVideoWinForms_PublishOutput" ComponentId="{D5A30E81-3AB4-4FE2-B830-16D0B3C3C2D0}" Directory_="BackgroundVideoWinForms_Dir" Attributes="0" KeyPath="BackgroundVideoWinForms.deps.json" Type="0"/>
+    <ROW Component="DesktopShortcut" ComponentId="{F8A2B1C3-D4E5-4F67-8A9B-C1D2E3F4A5B6}" Directory_="DESKTOPDIR" Attributes="0" KeyPath="BackgroundVideoWinForms.exe.lnk"/>
     <ROW Component="ProductInformation" ComponentId="{05206E5A-98EE-42FC-A510-1E2E1BC40ECB}" Directory_="APPDIR" Attributes="4" KeyPath="Version"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.MsiFeatsComponent">
@@ -54,6 +56,7 @@
     <ROW File="BackgroundVideoWinForms.deps.json" Component_="BackgroundVideoWinForms_PublishOutput" FileName="BACKGR~2.JSO|[|AI_PROPPATH_FILENAME_PERBUILD_BackgroundVideoWinForms.deps.json]" Version="65535.65535.65535.65535" Attributes="0" SourcePath="&lt;AI_APPPATH_PERBUILD_BackgroundVideoWinForms.deps.json&gt;" SelfReg="false"/>
     <ROW File="BackgroundVideoWinForms.exe" Component_="BackgroundVideoWinForms_PublishOutput" FileName="BACKGR~2.EXE|[|AI_PROPPATH_FILENAME_PERBUILD_BackgroundVideoWinForms.exe]" Version="65535.65535.65535.65535" Attributes="0" SourcePath="&lt;AI_APPPATH_PERBUILD_BackgroundVideoWinForms.exe&gt;" SelfReg="false" DigSign="true"/>
     <ROW File="BackgroundVideoWinForms.runtimeconfig.json" Component_="BackgroundVideoWinForms_PublishOutput" FileName="BACKGR~3.JSO|[|AI_PROPPATH_FILENAME_PERBUILD_BackgroundVideoWinForms.runtimeconfig.json]" Version="65535.65535.65535.65535" Attributes="0" SourcePath="&lt;AI_APPPATH_PERBUILD_BackgroundVideoWinForms.runtimeconfig.json&gt;" SelfReg="false"/>
+    <ROW File="BackgroundVideoWinForms.exe.lnk" Component_="DesktopShortcut" FileName="BACKGR~2.LNK|Background Video Downloader.lnk" Version="65535.65535.65535.65535" Attributes="0" SourcePath="[BackgroundVideoWinForms_Dir]BackgroundVideoWinForms.exe" SelfReg="false"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.AppPathsComponent">
     <ROW Name="AI_APPPATH_PERBUILD_BackgroundVideoWinForms.deps.json" Path="[|AI_PROPPATH_DIR_PERBUILD_BackgroundVideoWinForms.deps.json]\[|AI_PROPPATH_FILENAME_PERBUILD_BackgroundVideoWinForms.deps.json]" Type="2" Content="0"/>
@@ -123,6 +126,7 @@
     <ROW Action="AI_RESTORE_LOCATION" Type="65" Source="aicustact.dll" Target="RestoreLocation"/>
     <ROW Action="AI_ResolveKnownFolders" Type="1" Source="aicustact.dll" Target="AI_ResolveKnownFolders"/>
     <ROW Action="AI_SHOW_LOG" Type="65" Source="aicustact.dll" Target="LaunchLogFile" WithoutSeq="true"/>
+    <ROW Action="CreateDesktopShortcut" Type="1" Source="msi.dll" Target="CreateShortcut" Arguments="[DESKTOPDIR]Background Video Downloader.lnk;[BackgroundVideoWinForms_Dir]BackgroundVideoWinForms.exe"/>
     <ROW Action="AI_STORE_LOCATION" Type="51" Source="ARPINSTALLLOCATION" Target="[APPDIR]"/>
     <ROW Action="SET_APPDIR" Type="307" Source="APPDIR" Target="[ProgramFilesFolder][Manufacturer]\[ProductName]"/>
     <ROW Action="SET_SHORTCUTDIR" Type="307" Source="SHORTCUTDIR" Target="[ProgramMenuFolder][ProductName]"/>
@@ -133,6 +137,7 @@
     <ROW Feature_="MainFeature" Component_="ProductInformation"/>
     <ROW Feature_="MainFeature" Component_="BackgroundVideoWinForms_PrimaryOutput"/>
     <ROW Feature_="MainFeature" Component_="BackgroundVideoWinForms_PublishOutput"/>
+    <ROW Feature_="MainFeature" Component_="DesktopShortcut"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.MsiInstExSeqComponent">
     <ROW Action="AI_DOWNGRADE" Condition="AI_NEWERPRODUCTFOUND AND (UILevel &lt;&gt; 5)" Sequence="210"/>
@@ -141,6 +146,7 @@
     <ROW Action="AI_PREPARE_UPGRADE" Condition="AI_UPGRADE=&quot;No&quot; AND (Not Installed)" Sequence="1399"/>
     <ROW Action="AI_ResolveKnownFolders" Sequence="52"/>
     <ROW Action="AI_EnableDebugLog" Sequence="51"/>
+    <ROW Action="CreateDesktopShortcut" Sequence="1500"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.MsiInstallUISequenceComponent">
     <ROW Action="AI_PRESERVE_INSTALL_TYPE" Sequence="199"/>
@@ -148,6 +154,7 @@
     <ROW Action="AI_ResolveKnownFolders" Sequence="53"/>
     <ROW Action="AI_DpiContentScale" Sequence="52"/>
     <ROW Action="AI_EnableDebugLog" Sequence="51"/>
+    <ROW Action="CreateDesktopShortcut" Sequence="1500"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.MsiLaunchConditionsComponent">
     <ROW Condition="((VersionNT &lt;&gt; 501) AND (VersionNT &lt;&gt; 502))" Description="[ProductName] cannot be installed on [WindowsTypeNT5XDisplay]." DescriptionLocId="AI.LaunchCondition.NoNT5X" IsPredefined="true" Builds="DefaultBuild"/>
