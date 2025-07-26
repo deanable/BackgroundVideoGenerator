@@ -4,5 +4,9 @@
     <TargetFramework>net9.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>BackgroundVideoWinForms</RootNamespace>
+    <ApplicationIcon>Icons\video-file (1).ico</ApplicationIcon>
   </PropertyGroup>
+  <ItemGroup>
+    <Content Include="Icons\video-file (1).ico" />
+  </ItemGroup>
 </Project> 

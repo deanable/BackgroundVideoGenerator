@@ -4,20 +4,27 @@ VisualStudioVersion = 17.0.31912.275
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BackgroundVideoWinForms", "BackgroundVideoWinForms\BackgroundVideoWinForms.csproj", "{B1A1A1A1-1111-1111-1111-111111111111}"
 EndProject
-Project("{54435603-DBB4-11D2-8724-00A0C9A8B90C}") = "SetupBackgroundDownloader", "SetupBackgroundDownloader\SetupBackgroundDownloader.vdproj", "{3E102C6A-AD7A-6A11-C43B-DE0E19C1040A}"
+Project("{840C416C-B8F3-42BC-B0DD-F6BB14C9F8CB}") = "Setup Background Video Downloader", "Setup Background Video Downloader\Setup Background Video Downloader.aiproj", "{5F0BDC68-73AE-4001-8E75-E31B7C20792E}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
+		DefaultBuild|Any CPU = DefaultBuild|Any CPU
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{B1A1A1A1-1111-1111-1111-111111111111}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{B1A1A1A1-1111-1111-1111-111111111111}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B1A1A1A1-1111-1111-1111-111111111111}.DefaultBuild|Any CPU.ActiveCfg = Release|Any CPU
+		{B1A1A1A1-1111-1111-1111-111111111111}.DefaultBuild|Any CPU.Build.0 = Release|Any CPU
 		{B1A1A1A1-1111-1111-1111-111111111111}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B1A1A1A1-1111-1111-1111-111111111111}.Release|Any CPU.Build.0 = Release|Any CPU
-		{3E102C6A-AD7A-6A11-C43B-DE0E19C1040A}.Debug|Any CPU.ActiveCfg = Debug
-		{3E102C6A-AD7A-6A11-C43B-DE0E19C1040A}.Release|Any CPU.ActiveCfg = Release
+		{5F0BDC68-73AE-4001-8E75-E31B7C20792E}.Debug|Any CPU.ActiveCfg = DefaultBuild
+		{5F0BDC68-73AE-4001-8E75-E31B7C20792E}.Debug|Any CPU.Build.0 = DefaultBuild
+		{5F0BDC68-73AE-4001-8E75-E31B7C20792E}.DefaultBuild|Any CPU.ActiveCfg = DefaultBuild
+		{5F0BDC68-73AE-4001-8E75-E31B7C20792E}.DefaultBuild|Any CPU.Build.0 = DefaultBuild
+		{5F0BDC68-73AE-4001-8E75-E31B7C20792E}.Release|Any CPU.ActiveCfg = DefaultBuild
+		{5F0BDC68-73AE-4001-8E75-E31B7C20792E}.Release|Any CPU.Build.0 = DefaultBuild
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
