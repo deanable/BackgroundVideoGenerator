@@ -17,6 +17,7 @@
     <ROW Property="ProductLanguage" Value="1033"/>
     <ROW Property="ProductName" Value="Background Video Downloader"/>
     <ROW Property="ProductVersion" Value="1.0.0" Options="32"/>
+    <ROW Property="ARPPRODUCTICON" Value="icon.ico"/>
     <ROW Property="SecureCustomProperties" Value="OLDPRODUCTS;AI_NEWERPRODUCTFOUND"/>
     <ROW Property="UpgradeCode" Value="{A1F5849B-4B89-4C0A-94F2-845208F1D1B1}"/>
     <ROW Property="WindowsType9X" MultiBuildValue="DefaultBuild:Windows 9x/ME" ValueLocId="-"/>
@@ -57,6 +58,7 @@
     <ROW File="BackgroundVideoWinForms.exe" Component_="BackgroundVideoWinForms_PublishOutput" FileName="BACKGR~2.EXE|[|AI_PROPPATH_FILENAME_PERBUILD_BackgroundVideoWinForms.exe]" Version="65535.65535.65535.65535" Attributes="0" SourcePath="&lt;AI_APPPATH_PERBUILD_BackgroundVideoWinForms.exe&gt;" SelfReg="false" DigSign="true"/>
     <ROW File="BackgroundVideoWinForms.runtimeconfig.json" Component_="BackgroundVideoWinForms_PublishOutput" FileName="BACKGR~3.JSO|[|AI_PROPPATH_FILENAME_PERBUILD_BackgroundVideoWinForms.runtimeconfig.json]" Version="65535.65535.65535.65535" Attributes="0" SourcePath="&lt;AI_APPPATH_PERBUILD_BackgroundVideoWinForms.runtimeconfig.json&gt;" SelfReg="false"/>
     <ROW File="BackgroundVideoWinForms.exe.lnk" Component_="DesktopShortcut" FileName="BACKGR~2.LNK|Background Video Downloader.lnk" Version="65535.65535.65535.65535" Attributes="0" SourcePath="[BackgroundVideoWinForms_Dir]BackgroundVideoWinForms.exe" SelfReg="false"/>
+    <ROW File="icon.ico" Component_="ProductInformation" FileName="ICON.ICO|icon.ico" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\BackgroundVideoWinForms\Icons\video-file (1).ico" SelfReg="false"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.AppPathsComponent">
     <ROW Name="AI_APPPATH_PERBUILD_BackgroundVideoWinForms.deps.json" Path="[|AI_PROPPATH_DIR_PERBUILD_BackgroundVideoWinForms.deps.json]\[|AI_PROPPATH_FILENAME_PERBUILD_BackgroundVideoWinForms.deps.json]" Type="2" Content="0"/>
@@ -126,7 +128,7 @@
     <ROW Action="AI_RESTORE_LOCATION" Type="65" Source="aicustact.dll" Target="RestoreLocation"/>
     <ROW Action="AI_ResolveKnownFolders" Type="1" Source="aicustact.dll" Target="AI_ResolveKnownFolders"/>
     <ROW Action="AI_SHOW_LOG" Type="65" Source="aicustact.dll" Target="LaunchLogFile" WithoutSeq="true"/>
-    <ROW Action="CreateDesktopShortcut" Type="1" Source="msi.dll" Target="CreateShortcut" Arguments="[DESKTOPDIR]Background Video Downloader.lnk;[BackgroundVideoWinForms_Dir]BackgroundVideoWinForms.exe"/>
+    <ROW Action="CreateDesktopShortcut" Type="1" Source="msi.dll" Target="CreateShortcut" Arguments="[DESKTOPDIR]Background Video Downloader.lnk;[BackgroundVideoWinForms_Dir]BackgroundVideoWinForms.exe;[APPDIR]icon.ico"/>
     <ROW Action="AI_STORE_LOCATION" Type="51" Source="ARPINSTALLLOCATION" Target="[APPDIR]"/>
     <ROW Action="SET_APPDIR" Type="307" Source="APPDIR" Target="[ProgramFilesFolder][Manufacturer]\[ProductName]"/>
     <ROW Action="SET_SHORTCUTDIR" Type="307" Source="SHORTCUTDIR" Target="[ProgramMenuFolder][ProductName]"/>
