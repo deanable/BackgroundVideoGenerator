@@ -23,9 +23,20 @@ namespace BackgroundVideoWinForms
         {
             InitializeComponent();
             labelStatus.Text = "";
-            // Load API key from registry
-            textBoxApiKey.Text = RegistryHelper.LoadApiKey();
+            
+            // Load all settings from registry
+            LoadSettingsFromRegistry();
+            
+            // Set up event handlers for saving settings
             textBoxApiKey.Leave += textBoxApiKey_Leave;
+            textBoxSearch.Leave += textBoxSearch_Leave;
+            trackBarDuration.ValueChanged += trackBarDuration_ValueChanged;
+            radioButton1080p.CheckedChanged += radioButtonResolution_CheckedChanged;
+            radioButton4k.CheckedChanged += radioButtonResolution_CheckedChanged;
+            
+            // Set up form closing event to save window position
+            this.FormClosing += Form1_FormClosing;
+            
             Logger.Log("Application started");
         }
 
@@ -36,6 +47,10 @@ namespace BackgroundVideoWinForms
         private async void buttonStart_Click(object sender, EventArgs e)
         {
             Logger.Log("ButtonStart_Click: User started video generation");
+            
+            // Save current settings before processing
+            SaveSettingsToRegistry();
+            
             string searchTerm = textBoxSearch.Text.Trim();
             int duration = trackBarDuration.Value * 60; // minutes to seconds
             string resolution = radioButton4k.Checked ? "3840:2160" : "1920:1080";
@@ -153,9 +168,101 @@ namespace BackgroundVideoWinForms
             }
         }
 
+        private void LoadSettingsFromRegistry()
+        {
+            try
+            {
+                // Load API key
+                textBoxApiKey.Text = RegistryHelper.LoadApiKey();
+                
+                // Load search term
+                textBoxSearch.Text = RegistryHelper.LoadSearchTerm();
+                
+                // Load duration
+                int savedDuration = RegistryHelper.LoadDuration();
+                trackBarDuration.Value = Math.Max(trackBarDuration.Minimum, Math.Min(trackBarDuration.Maximum, savedDuration));
+                
+                // Load resolution
+                string savedResolution = RegistryHelper.LoadResolution();
+                if (savedResolution == "4K")
+                {
+                    radioButton4k.Checked = true;
+                }
+                else
+                {
+                    radioButton1080p.Checked = true;
+                }
+                
+                // Load window position and size
+                var (x, y, width, height) = RegistryHelper.LoadWindowPosition();
+                if (x >= 0 && y >= 0)
+                {
+                    this.StartPosition = FormStartPosition.Manual;
+                    this.Location = new System.Drawing.Point(x, y);
+                }
+                if (width > 0 && height > 0)
+                {
+                    this.Size = new System.Drawing.Size(width, height);
+                }
+                
+                Logger.Log("Settings loaded from registry successfully");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogException(ex, "LoadSettingsFromRegistry failed");
+            }
+        }
+
+        private void SaveSettingsToRegistry()
+        {
+            try
+            {
+                // Save all current settings
+                string apiKey = textBoxApiKey.Text.Trim();
+                string searchTerm = textBoxSearch.Text.Trim();
+                int duration = trackBarDuration.Value;
+                string resolution = radioButton4k.Checked ? "4K" : "1080p";
+                
+                RegistryHelper.SaveAllSettings(apiKey, searchTerm, duration, resolution);
+                
+                // Save window position and size
+                RegistryHelper.SaveWindowPosition(this.Location.X, this.Location.Y, this.Width, this.Height);
+                
+                Logger.Log("Settings saved to registry successfully");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogException(ex, "SaveSettingsToRegistry failed");
+            }
+        }
+
         private void textBoxApiKey_Leave(object sender, EventArgs e)
         {
             RegistryHelper.SaveApiKey(textBoxApiKey.Text.Trim());
+        }
+
+        private void textBoxSearch_Leave(object sender, EventArgs e)
+        {
+            RegistryHelper.SaveSearchTerm(textBoxSearch.Text.Trim());
+        }
+
+        private void trackBarDuration_ValueChanged(object sender, EventArgs e)
+        {
+            RegistryHelper.SaveDuration(trackBarDuration.Value);
+        }
+
+        private void radioButtonResolution_CheckedChanged(object sender, EventArgs e)
+        {
+            if (sender is RadioButton radioButton && radioButton.Checked)
+            {
+                string resolution = radioButton == radioButton4k ? "4K" : "1080p";
+                RegistryHelper.SaveResolution(resolution);
+            }
+        }
+
+        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            SaveSettingsToRegistry();
         }
 
         private async Task<List<string>> DownloadAndNormalizeClipsAsync(List<PexelsVideoClip> clips, int totalDuration, string resolution)

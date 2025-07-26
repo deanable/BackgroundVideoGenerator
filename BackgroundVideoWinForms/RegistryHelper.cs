@@ -4,22 +4,130 @@ namespace BackgroundVideoWinForms
 {
     public static class RegistryHelper
     {
-        private const string REGISTRY_PATH = @"Software\\BackgroundVideoWinForms";
+        private const string REGISTRY_PATH = @"Software\BackgroundVideoWinForms";
+        
+        // Registry key names
         private const string REGISTRY_APIKEY = "PexelsApiKey";
+        private const string REGISTRY_SEARCH_TERM = "SearchTerm";
+        private const string REGISTRY_DURATION = "Duration";
+        private const string REGISTRY_RESOLUTION = "Resolution";
+        private const string REGISTRY_WINDOW_WIDTH = "WindowWidth";
+        private const string REGISTRY_WINDOW_HEIGHT = "WindowHeight";
+        private const string REGISTRY_WINDOW_X = "WindowX";
+        private const string REGISTRY_WINDOW_Y = "WindowY";
 
+        // Default values
+        private const string DEFAULT_SEARCH_TERM = "city";
+        private const int DEFAULT_DURATION = 2;
+        private const string DEFAULT_RESOLUTION = "1080p";
+        private const int DEFAULT_WINDOW_WIDTH = 600;
+        private const int DEFAULT_WINDOW_HEIGHT = 400;
+
+        #region API Key
         public static void SaveApiKey(string apiKey)
+        {
+            SaveStringValue(REGISTRY_APIKEY, apiKey);
+        }
+
+        public static string LoadApiKey()
+        {
+            return LoadStringValue(REGISTRY_APIKEY, string.Empty);
+        }
+        #endregion
+
+        #region Search Term
+        public static void SaveSearchTerm(string searchTerm)
+        {
+            SaveStringValue(REGISTRY_SEARCH_TERM, searchTerm);
+        }
+
+        public static string LoadSearchTerm()
+        {
+            return LoadStringValue(REGISTRY_SEARCH_TERM, DEFAULT_SEARCH_TERM);
+        }
+        #endregion
+
+        #region Duration
+        public static void SaveDuration(int duration)
+        {
+            SaveIntValue(REGISTRY_DURATION, duration);
+        }
+
+        public static int LoadDuration()
+        {
+            return LoadIntValue(REGISTRY_DURATION, DEFAULT_DURATION);
+        }
+        #endregion
+
+        #region Resolution
+        public static void SaveResolution(string resolution)
+        {
+            SaveStringValue(REGISTRY_RESOLUTION, resolution);
+        }
+
+        public static string LoadResolution()
+        {
+            return LoadStringValue(REGISTRY_RESOLUTION, DEFAULT_RESOLUTION);
+        }
+        #endregion
+
+        #region Window Position and Size
+        public static void SaveWindowPosition(int x, int y, int width, int height)
+        {
+            SaveIntValue(REGISTRY_WINDOW_X, x);
+            SaveIntValue(REGISTRY_WINDOW_Y, y);
+            SaveIntValue(REGISTRY_WINDOW_WIDTH, width);
+            SaveIntValue(REGISTRY_WINDOW_HEIGHT, height);
+        }
+
+        public static (int x, int y, int width, int height) LoadWindowPosition()
+        {
+            int x = LoadIntValue(REGISTRY_WINDOW_X, -1);
+            int y = LoadIntValue(REGISTRY_WINDOW_Y, -1);
+            int width = LoadIntValue(REGISTRY_WINDOW_WIDTH, DEFAULT_WINDOW_WIDTH);
+            int height = LoadIntValue(REGISTRY_WINDOW_HEIGHT, DEFAULT_WINDOW_HEIGHT);
+            return (x, y, width, height);
+        }
+        #endregion
+
+        #region Generic Save/Load Methods
+        private static void SaveStringValue(string valueName, string value)
         {
             try
             {
                 using (var key = Registry.CurrentUser.CreateSubKey(REGISTRY_PATH))
                 {
-                    key.SetValue(REGISTRY_APIKEY, apiKey);
+                    if (key != null)
+                    {
+                        key.SetValue(valueName, value ?? string.Empty);
+                    }
                 }
             }
-            catch { }
+            catch (System.Exception ex)
+            {
+                Logger.LogException(ex, $"RegistryHelper.SaveStringValue failed for {valueName}");
+            }
         }
 
-        public static string LoadApiKey()
+        private static void SaveIntValue(string valueName, int value)
+        {
+            try
+            {
+                using (var key = Registry.CurrentUser.CreateSubKey(REGISTRY_PATH))
+                {
+                    if (key != null)
+                    {
+                        key.SetValue(valueName, value);
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Logger.LogException(ex, $"RegistryHelper.SaveIntValue failed for {valueName}");
+            }
+        }
+
+        private static string LoadStringValue(string valueName, string defaultValue)
         {
             try
             {
@@ -27,14 +135,67 @@ namespace BackgroundVideoWinForms
                 {
                     if (key != null)
                     {
-                        var value = key.GetValue(REGISTRY_APIKEY) as string;
+                        var value = key.GetValue(valueName) as string;
                         if (!string.IsNullOrEmpty(value))
                             return value;
                     }
                 }
             }
-            catch { }
-            return string.Empty;
+            catch (System.Exception ex)
+            {
+                Logger.LogException(ex, $"RegistryHelper.LoadStringValue failed for {valueName}");
+            }
+            return defaultValue;
         }
+
+        private static int LoadIntValue(string valueName, int defaultValue)
+        {
+            try
+            {
+                using (var key = Registry.CurrentUser.OpenSubKey(REGISTRY_PATH))
+                {
+                    if (key != null)
+                    {
+                        var value = key.GetValue(valueName);
+                        if (value != null && int.TryParse(value.ToString(), out int result))
+                            return result;
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Logger.LogException(ex, $"RegistryHelper.LoadIntValue failed for {valueName}");
+            }
+            return defaultValue;
+        }
+        #endregion
+
+        #region Settings Management
+        public static void SaveAllSettings(string apiKey, string searchTerm, int duration, string resolution)
+        {
+            SaveApiKey(apiKey);
+            SaveSearchTerm(searchTerm);
+            SaveDuration(duration);
+            SaveResolution(resolution);
+        }
+
+        public static void ClearAllSettings()
+        {
+            try
+            {
+                using (var key = Registry.CurrentUser.OpenSubKey(REGISTRY_PATH, true))
+                {
+                    if (key != null)
+                    {
+                        Registry.CurrentUser.DeleteSubKeyTree(REGISTRY_PATH);
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Logger.LogException(ex, "RegistryHelper.ClearAllSettings failed");
+            }
+        }
+        #endregion
     }
 } 
