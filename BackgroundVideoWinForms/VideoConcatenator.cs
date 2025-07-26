@@ -67,8 +67,8 @@ namespace BackgroundVideoWinForms
                 }
             }
             
-            // Improved FFmpeg command with better settings to prevent duplicate frames
-            string ffmpegArgs = $"-y -f concat -safe 0 -i \"{tempListFile}\" -vf scale={resolution}:force_original_aspect_ratio=decrease,pad={resolution}:(ow-iw)/2:(oh-ih)/2 -c:v libx264 -preset fast -crf 23 -an -r 30 -vsync 1 -max_muxing_queue_size 1024 \"{outputFile}\"";
+            // Improved FFmpeg command with better settings for playback compatibility
+            string ffmpegArgs = $"-y -f concat -safe 0 -i \"{tempListFile}\" -vf scale={resolution}:force_original_aspect_ratio=decrease,pad={resolution}:(ow-iw)/2:(oh-ih)/2 -c:v libx264 -preset fast -crf 23 -an -r 30 -pix_fmt yuv420p -movflags +faststart -max_muxing_queue_size 1024 \"{outputFile}\"";
             Logger.Log($"VideoConcatenator: ffmpeg {ffmpegArgs}");
             
             try
