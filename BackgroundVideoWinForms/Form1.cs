@@ -179,6 +179,7 @@ namespace BackgroundVideoWinForms
                 // Load duration
                 int savedDuration = RegistryHelper.LoadDuration();
                 trackBarDuration.Value = Math.Max(trackBarDuration.Minimum, Math.Min(trackBarDuration.Maximum, savedDuration));
+                labelDuration.Text = $"Duration: {trackBarDuration.Value} minute{(trackBarDuration.Value == 1 ? "" : "s")}";
                 
                 // Load resolution
                 string savedResolution = RegistryHelper.LoadResolution();
