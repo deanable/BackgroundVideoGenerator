@@ -30,6 +30,7 @@ namespace BackgroundVideoWinForms
         private long currentFrame = 0;
         private double totalDuration = 0;
         private double currentTime = 0;
+        private int targetFrameRate = 30; // Default frame rate for progress calculation
 
         public Form1()
         {
@@ -166,17 +167,38 @@ namespace BackgroundVideoWinForms
                 string safeSearchTerm = string.Join("_", searchTerm.Split(Path.GetInvalidFileNameChars()));
                 string outputFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"{safeSearchTerm}_{System.DateTime.Now:yyyyMMddHHmmss}.mp4");
                 
-                // Calculate total duration for progress tracking
+                // Calculate total duration and detect frame rate for progress tracking
                 double totalVideoDuration = 0;
+                int detectedFrameRate = targetFrameRate;
+                int frameRateCount = 0;
+                
                 foreach (var file in downloadedFiles)
                 {
                     if (File.Exists(file))
                     {
                         double fileDuration = GetVideoDuration(file);
+                        int fileFrameRate = GetVideoFrameRate(file);
+                        
                         totalVideoDuration += fileDuration;
-                        Logger.LogDebug($"File {Path.GetFileName(file)} duration: {fileDuration:F2}s");
+                        
+                        // Calculate average frame rate from all videos
+                        if (fileFrameRate > 0)
+                        {
+                            detectedFrameRate += fileFrameRate;
+                            frameRateCount++;
+                        }
+                        
+                        Logger.LogDebug($"File {Path.GetFileName(file)} duration: {fileDuration:F2}s, frame rate: {fileFrameRate}fps");
                     }
                 }
+                
+                // Set average frame rate if we detected any
+                if (frameRateCount > 0)
+                {
+                    targetFrameRate = detectedFrameRate / frameRateCount;
+                    Logger.LogInfo($"Detected average frame rate: {targetFrameRate}fps from {frameRateCount} videos");
+                }
+                
                 SetTotalDuration(totalVideoDuration);
                 Logger.LogInfo($"Total video duration calculated: {totalVideoDuration:F2}s for progress tracking");
                 
@@ -363,7 +385,7 @@ namespace BackgroundVideoWinForms
                     return;
                 
                 // Debug logging for progress parsing
-                Logger.LogDebug($"Parsing FFmpeg progress: totalDuration={totalDuration:F2}s, totalFrames={totalFrames}");
+                Logger.LogDebug($"Parsing FFmpeg progress: totalDuration={totalDuration:F2}s, totalFrames={totalFrames}, currentFrame={currentFrame}");
                 
                 // Parse FFmpeg progress line: frame=114037 fps=736 q=29.0 size=88576KiB time=01:03:21.16 bitrate=190.9kbits/s dup=529620 drop=0 speed=24.5x elapsed=0:02:34.83
                 var frameMatch = System.Text.RegularExpressions.Regex.Match(line, @"frame=(\d+)");
@@ -387,11 +409,36 @@ namespace BackgroundVideoWinForms
                     
                     currentTime = hours * 3600 + minutes * 60 + seconds;
                     
-                    // Calculate progress percentage based on time if we have total duration
-                    if (totalDuration > 0)
+                    // Prioritize frame-based progress calculation for more accuracy
+                    if (totalFrames > 0 && currentFrame > 0)
                     {
-                        // Use a more conservative progress calculation to avoid jumping to 100% too early
-                        // Cap the progress at 95% until we're actually done
+                        // Use frame-based progress for most accurate tracking
+                        double frameProgressPercent = Math.Min(95.0, (double)currentFrame / totalFrames * 100.0);
+                        int progressValue = (int)Math.Round(frameProgressPercent);
+                        
+                        this.BeginInvoke((Action)(() =>
+                        {
+                            progressBar.Value = Math.Min(progressValue, progressBar.Maximum);
+                            string speed = speedMatch.Success ? $" ({speedMatch.Groups[1].Value}x)" : "";
+                            string timeDisplay = $"{hours:D2}:{minutes:D2}:{seconds:F1}";
+                            
+                            // Show frame-based progress with frame count
+                            if (frameProgressPercent >= 95.0)
+                            {
+                                labelStatus.Text = $"Encoding: Finalizing... {timeDisplay} ({currentFrame:N0}/{totalFrames:N0} frames){speed}";
+                            }
+                            else
+                            {
+                                labelStatus.Text = $"Encoding: {frameProgressPercent:F1}% - {timeDisplay} ({currentFrame:N0}/{totalFrames:N0} frames){speed}";
+                            }
+                            
+                            // Log frame-based progress updates
+                            Logger.LogDebug($"Frame-based progress: {frameProgressPercent:F1}% ({currentFrame:N0}/{totalFrames:N0} frames) at {timeDisplay}");
+                        }));
+                    }
+                    else if (totalDuration > 0)
+                    {
+                        // Fallback to time-based progress if frame count is not available
                         double rawProgressPercent = (currentTime / totalDuration) * 100.0;
                         double progressPercent = Math.Min(95.0, rawProgressPercent);
                         int progressValue = (int)Math.Round(progressPercent);
@@ -402,7 +449,7 @@ namespace BackgroundVideoWinForms
                             string speed = speedMatch.Success ? $" ({speedMatch.Groups[1].Value}x)" : "";
                             string timeDisplay = $"{hours:D2}:{minutes:D2}:{seconds:F1}";
                             
-                            // Show more detailed progress information
+                            // Show time-based progress
                             if (rawProgressPercent >= 95.0)
                             {
                                 labelStatus.Text = $"Encoding: Finalizing... {timeDisplay}{speed}";
@@ -412,42 +459,25 @@ namespace BackgroundVideoWinForms
                                 labelStatus.Text = $"Encoding: {progressPercent:F1}% - {timeDisplay}{speed}";
                             }
                             
-                            // Log progress updates for debugging
-                            Logger.LogDebug($"Progress bar updated: {progressPercent:F1}% (raw: {rawProgressPercent:F1}%) at {timeDisplay}");
+                            // Log time-based progress updates
+                            Logger.LogDebug($"Time-based progress: {progressPercent:F1}% (raw: {rawProgressPercent:F1}%) at {timeDisplay}");
                         }));
                     }
                     else
                     {
-                        // Fallback to frame-based progress if we have total frames
-                        if (totalFrames > 0)
+                        // Basic progress display without percentage - but still update progress bar based on time
+                        this.BeginInvoke((Action)(() =>
                         {
-                            double progressPercent = Math.Min(100.0, (double)currentFrame / totalFrames * 100.0);
-                            int progressValue = (int)Math.Round(progressPercent);
+                            string speed = speedMatch.Success ? $" ({speedMatch.Groups[1].Value}x)" : "";
+                            string timeDisplay = $"{hours:D2}:{minutes:D2}:{seconds:F1}";
+                            labelStatus.Text = $"Encoding: {timeDisplay}{speed}";
                             
-                            this.BeginInvoke((Action)(() =>
-                            {
-                                progressBar.Value = Math.Min(progressValue, progressBar.Maximum);
-                                string speed = speedMatch.Success ? $" ({speedMatch.Groups[1].Value}x)" : "";
-                                string timeDisplay = $"{hours:D2}:{minutes:D2}:{seconds:F1}";
-                                labelStatus.Text = $"Encoding: {progressPercent:F1}% - {timeDisplay}{speed}";
-                            }));
-                        }
-                        else
-                        {
-                            // Basic progress display without percentage - but still update progress bar based on time
-                            this.BeginInvoke((Action)(() =>
-                            {
-                                string speed = speedMatch.Success ? $" ({speedMatch.Groups[1].Value}x)" : "";
-                                string timeDisplay = $"{hours:D2}:{minutes:D2}:{seconds:F1}";
-                                labelStatus.Text = $"Encoding: {timeDisplay}{speed}";
-                                
-                                // Update progress bar based on elapsed time even without total duration
-                                // Use a more conservative estimate to avoid jumping to 100% too early
-                                double estimatedProgress = Math.Min(90.0, (currentTime / 600.0) * 100.0); // Assume 10 minutes max, cap at 90%
-                                int progressValue = (int)Math.Round(estimatedProgress);
-                                progressBar.Value = Math.Min(progressValue, progressBar.Maximum);
-                            }));
-                        }
+                            // Update progress bar based on elapsed time even without total duration
+                            // Use a more conservative estimate to avoid jumping to 100% too early
+                            double estimatedProgress = Math.Min(90.0, (currentTime / 600.0) * 100.0); // Assume 10 minutes max, cap at 90%
+                            int progressValue = (int)Math.Round(estimatedProgress);
+                            progressBar.Value = Math.Min(progressValue, progressBar.Maximum);
+                        }));
                     }
                 }
             }
@@ -460,7 +490,12 @@ namespace BackgroundVideoWinForms
         private void SetTotalDuration(double duration)
         {
             totalDuration = duration;
+            
+            // Calculate total frames based on duration and frame rate
+            totalFrames = (long)(duration * targetFrameRate);
+            
             Logger.LogInfo($"Set total duration for progress tracking: {duration:F2}s");
+            Logger.LogInfo($"Calculated total frames: {totalFrames} (duration: {duration:F2}s × {targetFrameRate}fps)");
             
             // Validate duration
             if (duration <= 0)
@@ -501,19 +536,90 @@ namespace BackgroundVideoWinForms
                 
                 using (var process = Process.Start(psi))
                 {
-                    string output = process.StandardOutput.ReadLine();
-                    process.WaitForExit(2000);
-                    if (!string.IsNullOrEmpty(output) && double.TryParse(output, out double duration))
+                    if (process == null)
                     {
-                        return duration;
+                        Logger.LogError("Failed to start ffprobe process");
+                        return 0;
+                    }
+                    
+                    string output = process.StandardOutput.ReadToEnd();
+                    process.WaitForExit();
+                    
+                    if (process.ExitCode == 0 && !string.IsNullOrWhiteSpace(output))
+                    {
+                        if (double.TryParse(output.Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double duration))
+                        {
+                            return duration;
+                        }
                     }
                 }
             }
             catch (Exception ex)
             {
-                Logger.LogException(ex, $"GetVideoDuration {Path.GetFileName(filePath)}");
+                Logger.LogException(ex, "GetVideoDuration");
             }
+            
             return 0;
+        }
+
+        private int GetVideoFrameRate(string filePath)
+        {
+            try
+            {
+                string ffprobePath = @"C:\Program Files (x86)\ffmpeg-2025-07-23-git-829680f96a-full_build\bin\ffprobe.exe";
+                
+                if (!File.Exists(ffprobePath))
+                {
+                    Logger.LogError($"ffprobe not found at {ffprobePath}");
+                    return targetFrameRate; // Return default frame rate
+                }
+                
+                var psi = new ProcessStartInfo
+                {
+                    FileName = ffprobePath,
+                    Arguments = $"-v error -select_streams v:0 -show_entries stream=r_frame_rate -of default=noprint_wrappers=1:nokey=1 \"{filePath}\"",
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                
+                using (var process = Process.Start(psi))
+                {
+                    if (process == null)
+                    {
+                        Logger.LogError("Failed to start ffprobe process for frame rate detection");
+                        return targetFrameRate;
+                    }
+                    
+                    string output = process.StandardOutput.ReadToEnd();
+                    process.WaitForExit();
+                    
+                    if (process.ExitCode == 0 && !string.IsNullOrWhiteSpace(output))
+                    {
+                        string frameRateStr = output.Trim();
+                        // Parse frame rate in format "30/1" or "30000/1001"
+                        if (frameRateStr.Contains("/"))
+                        {
+                            var parts = frameRateStr.Split('/');
+                            if (parts.Length == 2 && 
+                                double.TryParse(parts[0], out double numerator) && 
+                                double.TryParse(parts[1], out double denominator) && 
+                                denominator > 0)
+                            {
+                                int frameRate = (int)Math.Round(numerator / denominator);
+                                Logger.LogDebug($"Detected frame rate: {frameRate}fps from {frameRateStr} for {Path.GetFileName(filePath)}");
+                                return frameRate;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogException(ex, "GetVideoFrameRate");
+            }
+            
+            return targetFrameRate; // Return default frame rate if detection fails
         }
 
         private void LoadSettingsFromRegistry()
