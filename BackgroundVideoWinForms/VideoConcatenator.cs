@@ -58,18 +58,37 @@ namespace BackgroundVideoWinForms
             
             Logger.LogInfo($"Total duration of {validFiles.Count} files: {totalDuration:F1}s");
             
+            // Additional validation to ensure we have the expected files
+            if (totalDuration < 60) // If total duration is less than 1 minute, something is wrong
+            {
+                Logger.LogWarning($"Total duration ({totalDuration:F1}s) is suspiciously low for {validFiles.Count} files");
+                Logger.LogWarning("This may indicate that some files were not properly included in concatenation");
+            }
+            
             // Create a more robust concatenation command
             string tempListFile = Path.Combine(Path.GetTempPath(), $"pexels_concat_{Guid.NewGuid()}.txt");
             using (var sw = new StreamWriter(tempListFile))
             {
                 foreach (var file in validFiles)
                 {
-                    sw.WriteLine($"file '{file.Replace("'", "'\\''")}'");
+                    // Use absolute paths and escape properly for FFmpeg
+                    string absolutePath = Path.GetFullPath(file);
+                    string escapedPath = absolutePath.Replace("\\", "/").Replace("'", "'\\''");
+                    sw.WriteLine($"file '{escapedPath}'");
+                    Logger.LogDebug($"Added to concat list: {escapedPath}");
                 }
             }
             
+            // Log the concatenation list for debugging
+            Logger.LogDebug($"Concatenation list created with {validFiles.Count} files:");
+            foreach (var file in validFiles)
+            {
+                Logger.LogDebug($"  - {Path.GetFileName(file)} ({GetDuration(file):F2}s)");
+            }
+            
             // Improved FFmpeg command with better settings for playback compatibility
-            string ffmpegArgs = $"-y -f concat -safe 0 -i \"{tempListFile}\" -vf scale={resolution}:force_original_aspect_ratio=decrease,pad={resolution}:(ow-iw)/2:(oh-ih)/2 -c:v libx264 -preset fast -crf 23 -an -r 30 -pix_fmt yuv420p -movflags +faststart -max_muxing_queue_size 1024 \"{outputFile}\"";
+            // Added -avoid_negative_ts make_zero to handle timestamp issues
+            string ffmpegArgs = $"-y -f concat -safe 0 -i \"{tempListFile}\" -vf scale={resolution}:force_original_aspect_ratio=decrease,pad={resolution}:(ow-iw)/2:(oh-ih)/2 -c:v libx264 -preset fast -crf 23 -an -r 30 -pix_fmt yuv420p -movflags +faststart -max_muxing_queue_size 1024 -avoid_negative_ts make_zero \"{outputFile}\"";
             Logger.LogFfmpegCommand(ffmpegArgs, tempListFile, outputFile);
             
             try
