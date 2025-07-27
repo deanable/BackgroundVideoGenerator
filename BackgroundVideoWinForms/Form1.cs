@@ -26,11 +26,9 @@ namespace BackgroundVideoWinForms
         private bool isProcessing = false;
         
         // FFmpeg progress tracking
-        private long totalFrames = 0;
         private long currentFrame = 0;
         private double totalDuration = 0;
         private double currentTime = 0;
-        private int targetFrameRate = 30; // Default frame rate for progress calculation
 
         public Form1()
         {
@@ -80,7 +78,6 @@ namespace BackgroundVideoWinForms
             isProcessing = true;
             
             // Reset progress tracking variables
-            totalFrames = 0;
             currentFrame = 0;
             totalDuration = 0;
             currentTime = 0;
@@ -174,9 +171,9 @@ namespace BackgroundVideoWinForms
                 string safeSearchTerm = string.Join("_", searchTerm.Split(Path.GetInvalidFileNameChars()));
                 string outputFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"{safeSearchTerm}_{System.DateTime.Now:yyyyMMddHHmmss}.mp4");
                 
-                // Calculate total duration and detect frame rate for progress tracking
+                // Calculate total duration for progress tracking
                 double totalVideoDuration = 0;
-                int detectedFrameRate = targetFrameRate;
+                int detectedFrameRate = 30; // Default frame rate
                 int frameRateCount = 0;
                 
                 foreach (var file in downloadedFiles)
@@ -202,8 +199,7 @@ namespace BackgroundVideoWinForms
                 // Set average frame rate if we detected any
                 if (frameRateCount > 0)
                 {
-                    targetFrameRate = detectedFrameRate / frameRateCount;
-                    Logger.LogInfo($"Detected average frame rate: {targetFrameRate}fps from {frameRateCount} videos");
+                                    Logger.LogInfo($"Detected average frame rate: {detectedFrameRate / frameRateCount}fps from {frameRateCount} videos");
                 }
                 
                 SetTotalDuration(totalVideoDuration);
@@ -387,7 +383,6 @@ namespace BackgroundVideoWinForms
             progressBar.Value = 0;
             
             // Reset progress tracking
-            totalFrames = 0;
             currentFrame = 0;
             totalDuration = 0;
             currentTime = 0;
@@ -459,18 +454,14 @@ namespace BackgroundVideoWinForms
                 if (!line.Contains("frame=") || !line.Contains("time="))
                     return;
                 
-                // Debug logging for progress parsing
-                Logger.LogDebug($"Parsing FFmpeg progress: totalDuration={totalDuration:F2}s, totalFrames={totalFrames}, currentFrame={currentFrame}");
-                
                 // Parse FFmpeg progress line: frame=114037 fps=736 q=29.0 size=88576KiB time=01:03:21.16 bitrate=190.9kbits/s dup=529620 drop=0 speed=24.5x elapsed=0:02:34.83
                 var frameMatch = System.Text.RegularExpressions.Regex.Match(line, @"frame=(\d+)");
                 // Improved time regex to handle various time formats including MM:SS.SS
                 var timeMatch = System.Text.RegularExpressions.Regex.Match(line, @"time=(\d+):(\d+):(\d+\.?\d*)");
                 var speedMatch = System.Text.RegularExpressions.Regex.Match(line, @"speed=(\d+\.?\d*)x");
                 
-                if (frameMatch.Success && timeMatch.Success)
+                if (timeMatch.Success)
                 {
-                    currentFrame = long.Parse(frameMatch.Groups[1].Value);
                     int hours = int.Parse(timeMatch.Groups[1].Value);
                     int minutes = int.Parse(timeMatch.Groups[2].Value);
                     
@@ -484,67 +475,15 @@ namespace BackgroundVideoWinForms
                     
                     currentTime = hours * 3600 + minutes * 60 + seconds;
                     
-                    // Prioritize frame-based progress calculation for more accuracy
-                    if (totalFrames > 0 && currentFrame > 0)
+                    // Update frame count for logging purposes only
+                    if (frameMatch.Success)
                     {
-                        // Validate that current frame doesn't exceed total frames
-                        if (currentFrame > totalFrames)
-                        {
-                            Logger.LogWarning($"Current frame ({currentFrame:N0}) exceeds total frames ({totalFrames:N0}) - using time-based progress instead");
-                            // Fall back to time-based progress
-                            double rawProgressPercent = (currentTime / totalDuration) * 100.0;
-                            double progressPercent = Math.Min(95.0, rawProgressPercent);
-                            int progressValue = (int)Math.Round(progressPercent);
-                            
-                            this.BeginInvoke((Action)(() =>
-                            {
-                                progressBar.Value = Math.Min(progressValue, progressBar.Maximum);
-                                string speed = speedMatch.Success ? $" ({speedMatch.Groups[1].Value}x)" : "";
-                                string timeDisplay = $"{hours:D2}:{minutes:D2}:{seconds:F1}";
-                                
-                                // Show time-based progress with warning
-                                if (rawProgressPercent >= 95.0)
-                                {
-                                    labelStatus.Text = $"Encoding: Finalizing... {timeDisplay} (frame count error){speed}";
-                                }
-                                else
-                                {
-                                    labelStatus.Text = $"Encoding: {progressPercent:F1}% - {timeDisplay} (frame count error){speed}";
-                                }
-                                
-                                Logger.LogDebug($"Time-based progress (fallback): {progressPercent:F1}% at {timeDisplay}");
-                            }));
-                        }
-                        else
-                        {
-                            // Use frame-based progress for most accurate tracking
-                            double frameProgressPercent = Math.Min(95.0, (double)currentFrame / totalFrames * 100.0);
-                            int progressValue = (int)Math.Round(frameProgressPercent);
-                            
-                            this.BeginInvoke((Action)(() =>
-                            {
-                                progressBar.Value = Math.Min(progressValue, progressBar.Maximum);
-                                string speed = speedMatch.Success ? $" ({speedMatch.Groups[1].Value}x)" : "";
-                                string timeDisplay = $"{hours:D2}:{minutes:D2}:{seconds:F1}";
-                                
-                                // Show frame-based progress with frame count
-                                if (frameProgressPercent >= 95.0)
-                                {
-                                    labelStatus.Text = $"Encoding: Finalizing... {timeDisplay} ({currentFrame:N0}/{totalFrames:N0} frames){speed}";
-                                }
-                                else
-                                {
-                                    labelStatus.Text = $"Encoding: {frameProgressPercent:F1}% - {timeDisplay} ({currentFrame:N0}/{totalFrames:N0} frames){speed}";
-                                }
-                                
-                                // Log frame-based progress updates
-                                Logger.LogDebug($"Frame-based progress: {frameProgressPercent:F1}% ({currentFrame:N0}/{totalFrames:N0} frames) at {timeDisplay}");
-                            }));
-                        }
+                        currentFrame = long.Parse(frameMatch.Groups[1].Value);
                     }
-                    else if (totalDuration > 0)
+                    
+                    // Use time-based progress calculation for accuracy
+                    if (totalDuration > 0)
                     {
-                        // Fallback to time-based progress if frame count is not available
                         double rawProgressPercent = (currentTime / totalDuration) * 100.0;
                         double progressPercent = Math.Min(95.0, rawProgressPercent);
                         int progressValue = (int)Math.Round(progressPercent);
@@ -565,13 +504,16 @@ namespace BackgroundVideoWinForms
                                 labelStatus.Text = $"Encoding: {progressPercent:F1}% - {timeDisplay}{speed}";
                             }
                             
-                            // Log time-based progress updates
-                            Logger.LogDebug($"Time-based progress: {progressPercent:F1}% (raw: {rawProgressPercent:F1}%) at {timeDisplay}");
+                            // Log progress updates (less verbose)
+                            if (frameMatch.Success && currentFrame % 1000 == 0) // Log every 1000 frames
+                            {
+                                Logger.LogDebug($"Progress: {progressPercent:F1}% at {timeDisplay} ({currentFrame:N0} frames){speed}");
+                            }
                         }));
                     }
                     else
                     {
-                        // Basic progress display without percentage - but still update progress bar based on time
+                        // Basic progress display without percentage
                         this.BeginInvoke((Action)(() =>
                         {
                             string speed = speedMatch.Success ? $" ({speedMatch.Groups[1].Value}x)" : "";
@@ -597,25 +539,10 @@ namespace BackgroundVideoWinForms
         {
             totalDuration = duration;
             
-            // Use output frame rate (30fps) for total frame calculation, not input frame rate
-            // FFmpeg encodes output at 30fps regardless of input frame rates
-            int outputFrameRate = 30;
-            totalFrames = (long)(duration * outputFrameRate);
-            
+            // Use time-based progress calculation instead of frame-based to avoid mismatches
+            // FFmpeg output frame rate may vary, so we'll rely on time for accuracy
             Logger.LogInfo($"Set total duration for progress tracking: {duration:F2}s");
-            Logger.LogInfo($"Calculated total frames: {totalFrames:N0} (duration: {duration:F2}s × {outputFrameRate}fps output)");
-            Logger.LogInfo($"Note: Using output frame rate ({outputFrameRate}fps) for frame calculation, not input average ({targetFrameRate}fps)");
-            
-            // Validate frame calculation
-            if (totalFrames <= 0)
-            {
-                Logger.LogWarning($"Invalid total frames calculated: {totalFrames} - using fallback calculation");
-                // Fallback: use target duration from UI
-                int targetDurationMinutes = trackBarDuration.Value;
-                double targetDurationSeconds = targetDurationMinutes * 60.0;
-                totalFrames = (long)(targetDurationSeconds * outputFrameRate);
-                Logger.LogInfo($"Fallback total frames: {totalFrames:N0} (target: {targetDurationMinutes}min × 60s × {outputFrameRate}fps)");
-            }
+            Logger.LogInfo($"Using time-based progress calculation for accuracy");
             
             // Validate duration
             if (duration <= 0)
@@ -632,9 +559,10 @@ namespace BackgroundVideoWinForms
                 Logger.LogInfo($"Total duration set successfully: {duration:F2}s - progress bar will show accurate percentage");
             }
             
-            // Reset current frame counter to prevent accumulation issues
+            // Reset current time counter to prevent accumulation issues
+            currentTime = 0;
             currentFrame = 0;
-            Logger.LogDebug($"Reset current frame counter to 0");
+            Logger.LogDebug($"Reset current time and frame counters to 0");
         }
 
         private double GetVideoDuration(string filePath)
@@ -695,7 +623,7 @@ namespace BackgroundVideoWinForms
                 if (!File.Exists(ffprobePath))
                 {
                     Logger.LogError($"ffprobe not found at {ffprobePath}");
-                    return targetFrameRate; // Return default frame rate
+                    return 30; // Return default frame rate
                 }
                 
                 var psi = new ProcessStartInfo
@@ -712,7 +640,7 @@ namespace BackgroundVideoWinForms
                     if (process == null)
                     {
                         Logger.LogError("Failed to start ffprobe process for frame rate detection");
-                        return targetFrameRate;
+                        return 30;
                     }
                     
                     string output = process.StandardOutput.ReadToEnd();
@@ -743,7 +671,7 @@ namespace BackgroundVideoWinForms
                 Logger.LogException(ex, "GetVideoFrameRate");
             }
             
-            return targetFrameRate; // Return default frame rate if detection fails
+            return 30; // Return default frame rate if detection fails
         }
 
         private void LoadSettingsFromRegistry()
@@ -1022,7 +950,12 @@ namespace BackgroundVideoWinForms
                 labelStatus.Text = $"Downloading 0 of {clipsToProcess} clips...";
             }));
             var downloadTimes = new List<double>();
-            for (int i = 0; i < clipsToProcess; i++)
+            
+            // Memory optimization: Process downloads in smaller batches
+            int batchSize = Math.Min(3, clipsToProcess); // Process max 3 downloads at a time
+            Logger.LogInfo($"Memory optimization: Processing downloads in batches of {batchSize}");
+            
+            for (int i = 0; i < clipsToProcess; i += batchSize)
             {
                 // Check for cancellation
                 if (cancellationToken.IsCancellationRequested)
@@ -1031,51 +964,37 @@ namespace BackgroundVideoWinForms
                     return downloadedFiles;
                 }
                 
-                var clip = selectedClips[i];
-                string fileName = Path.Combine(tempDir, $"clip_{i}.mp4");
-                var sw = System.Diagnostics.Stopwatch.StartNew();
+                // Process batch
+                int batchEnd = Math.Min(i + batchSize, clipsToProcess);
+                var batchTasks = new List<Task<(string fileName, double duration)>>();
                 
-                // Update status to show current download
-                labelStatus.Invoke((System.Action)(() => {
-                    labelStatus.Text = $"Downloading {i + 1} of {clipsToProcess}: {Path.GetFileName(fileName)} ({clip.Duration}s clip)";
-                }));
-                
-                Logger.LogProgress("Download", i + 1, clipsToProcess, $"Clip {i + 1}: {clip.Duration}s");
-                Logger.LogDebug($"Starting download {i + 1} of {clipsToProcess}: {clip.Url} (duration: {clip.Duration}s)");
-                await videoDownloader.DownloadAsync(clip, fileName, cancellationToken);
-                sw.Stop();
-                downloadTimes.Add(sw.Elapsed.TotalSeconds);
-                Logger.LogPerformance("Individual Download", sw.Elapsed, $"Clip {i + 1}: {Path.GetFileName(fileName)}");
-                
-                // Update progress bar
-                progressBar.Invoke((System.Action)(() => {
-                    progressBar.Value = i + 1;
-                }));
-                
-                // Calculate and display progress with time estimates
-                double avg = downloadTimes.Count > 0 ? downloadTimes.Average() : 0;
-                double est = avg * (clipsToProcess - (i + 1));
-                double percentComplete = (double)(i + 1) / clipsToProcess * 100;
-                
-                labelStatus.Invoke((System.Action)(() => {
-                    if (i + 1 < clipsToProcess)
-                    {
-                        labelStatus.Text = $"Downloading {i + 1} of {clipsToProcess} clips ({percentComplete:F0}% complete) - Est. {est:F0}s remaining";
-                    }
-                    else
-                    {
-                        labelStatus.Text = $"Download complete! Downloaded {clipsToProcess} clips in {downloadStopwatch.Elapsed.TotalSeconds:F1}s";
-                    }
-                }));
-                
-                downloadedFiles.Add(fileName);
-                
-                // Log file information after download
-                if (File.Exists(fileName))
+                for (int j = i; j < batchEnd; j++)
                 {
-                    var fileInfo = new FileInfo(fileName);
-                    Logger.LogFileOperation("Downloaded", fileName, fileInfo.Length);
+                    var clip = selectedClips[j];
+                    string fileName = Path.Combine(tempDir, $"clip_{j}.mp4");
+                    
+                    Logger.LogProgress("Download", j + 1, clipsToProcess, $"Clip {j + 1}: {clip.Duration}s");
+                    Logger.LogDebug($"Starting download {j + 1} of {clipsToProcess}: {clip.Url} (duration: {clip.Duration}s)");
+                    
+                    var task = DownloadClipWithTimingAsync(clip, fileName, j + 1, clipsToProcess, cancellationToken);
+                    batchTasks.Add(task);
                 }
+                
+                // Wait for batch to complete
+                var batchResults = await Task.WhenAll(batchTasks);
+                
+                // Process results
+                foreach (var result in batchResults)
+                {
+                    downloadedFiles.Add(result.fileName);
+                    downloadTimes.Add(result.duration);
+                }
+                
+                // Force garbage collection after each batch to free memory
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                
+                Logger.LogDebug($"Completed batch {i / batchSize + 1}, memory usage: {GC.GetTotalMemory(false) / 1024 / 1024}MB");
             }
             downloadStopwatch.Stop();
             Logger.LogPerformance("Download Phase Complete", downloadStopwatch.Elapsed, $"Downloaded {clipsToProcess} clips");
@@ -1334,6 +1253,28 @@ namespace BackgroundVideoWinForms
             {
                 Logger.LogDebug($"Failed to schedule cleanup for {Path.GetFileName(filePath)}: {ex.Message}");
             }
+        }
+
+        private async Task<(string fileName, double duration)> DownloadClipWithTimingAsync(PexelsVideoClip clip, string fileName, int clipNumber, int totalClips, CancellationToken cancellationToken)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            
+            // Update status to show current download
+            labelStatus.Invoke((System.Action)(() => {
+                labelStatus.Text = $"Downloading {clipNumber} of {totalClips}: {Path.GetFileName(fileName)} ({clip.Duration}s clip)";
+            }));
+            
+            string downloadedFileName = await videoDownloader.DownloadAsync(clip, fileName, cancellationToken);
+            
+            sw.Stop();
+            Logger.LogPerformance("Individual Download", sw.Elapsed, $"Clip {clipNumber}: {Path.GetFileName(downloadedFileName)}");
+            
+            // Update progress bar
+            progressBar.Invoke((System.Action)(() => {
+                progressBar.Value = clipNumber;
+            }));
+            
+            return (downloadedFileName, sw.Elapsed.TotalSeconds);
         }
 
         /// <summary>

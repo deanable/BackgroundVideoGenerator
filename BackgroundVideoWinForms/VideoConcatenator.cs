@@ -146,8 +146,14 @@ namespace BackgroundVideoWinForms
                     
                     process.BeginErrorReadLine();
                     
-                    // Wait for process completion with cancellation support
+                    // Calculate dynamic timeout based on video size and duration
+                    int timeoutMinutes = CalculateTimeoutMinutes(totalDuration, inputFiles.Count);
+                    Logger.Log($"VideoConcatenator: Using {timeoutMinutes} minute timeout for {totalDuration:F1}s video with {inputFiles.Count} files");
+                    
+                    // Wait for process completion with dynamic timeout and cancellation support
                     bool processCompleted = false;
+                    DateTime timeoutDeadline = DateTime.Now.AddMinutes(timeoutMinutes);
+                    
                     while (!processCompleted && !process.HasExited)
                     {
                         // Check for cancellation
@@ -169,17 +175,25 @@ namespace BackgroundVideoWinForms
                             return;
                         }
                         
+                        // Check for timeout
+                        if (DateTime.Now > timeoutDeadline)
+                        {
+                            Logger.LogWarning($"VideoConcatenator: Process timeout after {timeoutMinutes} minutes - killing FFmpeg");
+                            try 
+                            { 
+                                process.Kill(); 
+                                Logger.LogInfo("FFmpeg process killed due to timeout");
+                            } 
+                            catch (Exception ex)
+                            {
+                                Logger.LogWarning($"Error killing FFmpeg process on timeout: {ex.Message}");
+                            }
+                            progressCallback?.Invoke("Error: Process timeout");
+                            return;
+                        }
+                        
                         // Wait a short time before checking again
-                        processCompleted = process.WaitForExit(1000); // 1 second timeout
-                    }
-                    
-                    // Add timeout to prevent infinite processing - increased for longer videos
-                    if (!processCompleted)
-                    {
-                        Logger.LogWarning("VideoConcatenator: Process timeout - killing FFmpeg");
-                        try { process.Kill(); } catch { }
-                        progressCallback?.Invoke("Error: Process timeout");
-                        return;
+                        processCompleted = process.WaitForExit(2000); // 2 second timeout for more responsive cancellation
                     }
                     
                     var endTime = DateTime.Now;
@@ -210,6 +224,26 @@ namespace BackgroundVideoWinForms
             {
                 try { File.Delete(tempListFile); } catch { }
             }
+        }
+
+        private int CalculateTimeoutMinutes(double totalDuration, int fileCount)
+        {
+            // Base timeout: 5 minutes
+            int baseTimeout = 5;
+            
+            // Add time based on video duration (1 minute per 2 minutes of video)
+            int durationTimeout = (int)Math.Ceiling(totalDuration / 120.0);
+            
+            // Add time based on number of files (30 seconds per file)
+            int fileCountTimeout = (int)Math.Ceiling(fileCount * 0.5);
+            
+            // Add buffer for system load
+            int bufferTimeout = 2;
+            
+            int totalTimeout = baseTimeout + durationTimeout + fileCountTimeout + bufferTimeout;
+            
+            // Cap at reasonable maximum (30 minutes)
+            return Math.Min(totalTimeout, 30);
         }
 
         private double GetDuration(string filePath)
