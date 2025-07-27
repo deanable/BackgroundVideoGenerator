@@ -197,6 +197,14 @@ namespace BackgroundVideoWinForms
                     // Parse FFmpeg progress output
                     ParseFFmpegProgress(progress);
                 }, cancellationTokenSource?.Token));
+                
+                // Set progress to 100% when concatenation is actually complete
+                this.BeginInvoke((Action)(() =>
+                {
+                    progressBar.Value = progressBar.Maximum;
+                    labelStatus.Text = "Encoding: Complete!";
+                    Logger.LogInfo("Video concatenation completed - progress bar set to 100%");
+                }));
                 concatStopwatch.Stop();
                 Logger.LogPerformance("Video Concatenation", concatStopwatch.Elapsed, $"Output: {Path.GetFileName(outputFile)}");
                 
@@ -382,7 +390,10 @@ namespace BackgroundVideoWinForms
                     // Calculate progress percentage based on time if we have total duration
                     if (totalDuration > 0)
                     {
-                        double progressPercent = Math.Min(100.0, (currentTime / totalDuration) * 100.0);
+                        // Use a more conservative progress calculation to avoid jumping to 100% too early
+                        // Cap the progress at 95% until we're actually done
+                        double rawProgressPercent = (currentTime / totalDuration) * 100.0;
+                        double progressPercent = Math.Min(95.0, rawProgressPercent);
                         int progressValue = (int)Math.Round(progressPercent);
                         
                         this.BeginInvoke((Action)(() =>
@@ -390,7 +401,19 @@ namespace BackgroundVideoWinForms
                             progressBar.Value = Math.Min(progressValue, progressBar.Maximum);
                             string speed = speedMatch.Success ? $" ({speedMatch.Groups[1].Value}x)" : "";
                             string timeDisplay = $"{hours:D2}:{minutes:D2}:{seconds:F1}";
-                            labelStatus.Text = $"Encoding: {progressPercent:F1}% - {timeDisplay}{speed}";
+                            
+                            // Show more detailed progress information
+                            if (rawProgressPercent >= 95.0)
+                            {
+                                labelStatus.Text = $"Encoding: Finalizing... {timeDisplay}{speed}";
+                            }
+                            else
+                            {
+                                labelStatus.Text = $"Encoding: {progressPercent:F1}% - {timeDisplay}{speed}";
+                            }
+                            
+                            // Log progress updates for debugging
+                            Logger.LogDebug($"Progress bar updated: {progressPercent:F1}% (raw: {rawProgressPercent:F1}%) at {timeDisplay}");
                         }));
                     }
                     else
@@ -419,8 +442,8 @@ namespace BackgroundVideoWinForms
                                 labelStatus.Text = $"Encoding: {timeDisplay}{speed}";
                                 
                                 // Update progress bar based on elapsed time even without total duration
-                                // Use a reasonable estimate based on typical video processing time
-                                double estimatedProgress = Math.Min(95.0, (currentTime / 300.0) * 100.0); // Assume 5 minutes max
+                                // Use a more conservative estimate to avoid jumping to 100% too early
+                                double estimatedProgress = Math.Min(90.0, (currentTime / 600.0) * 100.0); // Assume 10 minutes max, cap at 90%
                                 int progressValue = (int)Math.Round(estimatedProgress);
                                 progressBar.Value = Math.Min(progressValue, progressBar.Maximum);
                             }));
