@@ -179,6 +179,13 @@ namespace BackgroundVideoWinForms
                 SetTotalDuration(totalVideoDuration);
                 Logger.LogInfo($"Total video duration calculated: {totalVideoDuration:F2}s for progress tracking");
                 
+                // If total duration is still 0, use the target duration as fallback
+                if (totalVideoDuration <= 0)
+                {
+                    Logger.LogWarning("Total video duration is 0, using target duration as fallback for progress tracking");
+                    SetTotalDuration(duration); // Use the target duration from user input
+                }
+                
                 await Task.Run(() => videoConcatenator.Concatenate(downloadedFiles, outputFile, resolution, (progress) => {
                     // Check for cancellation
                     if (cancellationTokenSource?.Token.IsCancellationRequested == true)
@@ -346,6 +353,9 @@ namespace BackgroundVideoWinForms
                 if (!line.Contains("frame=") || !line.Contains("time="))
                     return;
                 
+                // Debug logging for progress parsing
+                Logger.LogDebug($"Parsing FFmpeg progress: totalDuration={totalDuration:F2}s, totalFrames={totalFrames}");
+                
                 // Parse FFmpeg progress line: frame=114037 fps=736 q=29.0 size=88576KiB time=01:03:21.16 bitrate=190.9kbits/s dup=529620 drop=0 speed=24.5x elapsed=0:02:34.83
                 var frameMatch = System.Text.RegularExpressions.Regex.Match(line, @"frame=(\d+)");
                 // Improved time regex to handle various time formats including MM:SS.SS
@@ -400,12 +410,18 @@ namespace BackgroundVideoWinForms
                         }
                         else
                         {
-                            // Basic progress display without percentage
+                            // Basic progress display without percentage - but still update progress bar based on time
                             this.BeginInvoke((Action)(() =>
                             {
                                 string speed = speedMatch.Success ? $" ({speedMatch.Groups[1].Value}x)" : "";
                                 string timeDisplay = $"{hours:D2}:{minutes:D2}:{seconds:F1}";
                                 labelStatus.Text = $"Encoding: {timeDisplay}{speed}";
+                                
+                                // Update progress bar based on elapsed time even without total duration
+                                // Use a reasonable estimate based on typical video processing time
+                                double estimatedProgress = Math.Min(95.0, (currentTime / 300.0) * 100.0); // Assume 5 minutes max
+                                int progressValue = (int)Math.Round(estimatedProgress);
+                                progressBar.Value = Math.Min(progressValue, progressBar.Maximum);
                             }));
                         }
                     }
@@ -426,10 +442,15 @@ namespace BackgroundVideoWinForms
             if (duration <= 0)
             {
                 Logger.LogWarning("Total duration is 0 or negative - progress tracking may not work correctly");
+                Logger.LogDebug("This will cause progress bar to use estimated progress instead of accurate percentage");
             }
             else if (duration > 3600) // More than 1 hour
             {
                 Logger.LogWarning($"Very long duration detected: {duration:F2}s - this may indicate an issue");
+            }
+            else
+            {
+                Logger.LogInfo($"Total duration set successfully: {duration:F2}s - progress bar will show accurate percentage");
             }
         }
 
