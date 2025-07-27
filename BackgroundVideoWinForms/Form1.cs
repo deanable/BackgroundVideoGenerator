@@ -124,7 +124,26 @@ namespace BackgroundVideoWinForms
                 Logger.LogApiCall("Pexels Search", $"term={searchTerm}, duration={duration}s", true);
                 
                 bool isVertical = radioButtonVertical.Checked;
-                var clips = await pexelsService.SearchVideosAsync(searchTerm, apiKey, duration, isVertical, cancellationToken: cancellationTokenSource.Token);
+                
+                // Calculate target resolution for search filtering
+                int targetWidth = 1920, targetHeight = 1080;
+                if (radioButton4k.Checked) 
+                { 
+                    targetWidth = 3840; 
+                    targetHeight = 2160; 
+                }
+                if (isVertical)
+                {
+                    // Swap width and height for vertical orientation
+                    int temp = targetWidth;
+                    targetWidth = targetHeight;
+                    targetHeight = temp;
+                }
+                
+                var clips = await pexelsService.SearchVideosAsync(searchTerm, apiKey, duration, isVertical, 
+                    cancellationToken: cancellationTokenSource.Token, 
+                    targetWidth: targetWidth, 
+                    targetHeight: targetHeight);
                 searchStopwatch.Stop();
                 Logger.LogPerformance("Pexels API Search", searchStopwatch.Elapsed, $"Found {clips?.Count ?? 0} clips");
                 

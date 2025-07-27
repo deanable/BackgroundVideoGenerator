@@ -21,9 +21,9 @@ namespace BackgroundVideoWinForms
     {
         private const string PEXELS_API_URL = "https://api.pexels.com/videos/search";
 
-        public async Task<List<PexelsVideoClip>> SearchVideosAsync(string searchTerm, string apiKey, int targetDurationSeconds = 60, bool isVertical = false, int maxPages = 3, CancellationToken cancellationToken = default)
+        public async Task<List<PexelsVideoClip>> SearchVideosAsync(string searchTerm, string apiKey, int targetDurationSeconds = 60, bool isVertical = false, int maxPages = 3, CancellationToken cancellationToken = default, int targetWidth = 1920, int targetHeight = 1080)
         {
-            Logger.LogApiCall("Pexels Search", $"term={searchTerm}, targetDuration={targetDurationSeconds}s, aspectRatio={(isVertical ? "Vertical" : "Horizontal")}", true);
+            Logger.LogApiCall("Pexels Search", $"term={searchTerm}, targetDuration={targetDurationSeconds}s, aspectRatio={(isVertical ? "Vertical" : "Horizontal")}, targetResolution={targetWidth}x{targetHeight}", true);
             var result = new List<PexelsVideoClip>();
             try
             {
@@ -74,8 +74,60 @@ namespace BackgroundVideoWinForms
                                 string link = file.GetProperty("link").GetString();
                                 int fileSize = file.TryGetProperty("file_size", out _) ? file.GetProperty("file_size").GetInt32() : 0;
                                 
-                                // Accept a wider range of video qualities and sizes
-                                if (width >= 1280 && height >= 720 && fileSize < 1000 * 1024 * 1024) // Less than 1GB, 720p minimum
+                                // Filter by target resolution to minimize normalization work
+                                bool resolutionMatches = false;
+                                
+                                // For 1080p target: accept 1080p and 1440p (but not 4K)
+                                if (targetWidth == 1920 && targetHeight == 1080)
+                                {
+                                    // Accept 1080p (1920x1080) and 1440p (2560x1440) for horizontal
+                                    // Accept 1080p (1080x1920) and 1440p (1440x2560) for vertical
+                                    if (isVertical)
+                                    {
+                                        resolutionMatches = (width == 1080 && height == 1920) || (width == 1440 && height == 2560);
+                                    }
+                                    else
+                                    {
+                                        resolutionMatches = (width == 1920 && height == 1080) || (width == 2560 && height == 1440);
+                                    }
+                                }
+                                // For 4K target: accept 4K and higher resolutions
+                                else if (targetWidth == 3840 && targetHeight == 2160)
+                                {
+                                    // Accept 4K (3840x2160) and 8K (7680x4320) for horizontal
+                                    // Accept 4K (2160x3840) and 8K (4320x7680) for vertical
+                                    if (isVertical)
+                                    {
+                                        resolutionMatches = (width == 2160 && height == 3840) || (width == 4320 && height == 7680);
+                                    }
+                                    else
+                                    {
+                                        resolutionMatches = (width == 3840 && height == 2160) || (width == 7680 && height == 4320);
+                                    }
+                                }
+                                // For vertical 1080p target
+                                else if (targetWidth == 1080 && targetHeight == 1920)
+                                {
+                                    resolutionMatches = (width == 1080 && height == 1920) || (width == 1440 && height == 2560);
+                                }
+                                // For vertical 4K target
+                                else if (targetWidth == 2160 && targetHeight == 3840)
+                                {
+                                    resolutionMatches = (width == 2160 && height == 3840) || (width == 4320 && height == 7680);
+                                }
+                                
+                                // Also accept files that are close to target resolution (within 10% tolerance)
+                                if (!resolutionMatches)
+                                {
+                                    double widthRatio = (double)width / targetWidth;
+                                    double heightRatio = (double)height / targetHeight;
+                                    bool widthClose = Math.Abs(widthRatio - 1.0) <= 0.1; // Within 10%
+                                    bool heightClose = Math.Abs(heightRatio - 1.0) <= 0.1; // Within 10%
+                                    resolutionMatches = widthClose && heightClose;
+                                }
+                                
+                                // Accept files that match resolution and size criteria
+                                if (resolutionMatches && fileSize < 1000 * 1024 * 1024) // Less than 1GB
                                 {
                                     if (width > bestWidth || (width == bestWidth && fileSize < bestFileSize))
                                     {
@@ -104,11 +156,11 @@ namespace BackgroundVideoWinForms
                                         FileSize = bestFileSize
                                     });
                                     count++;
-                                    Logger.LogDebug($"Added video: {duration}s, {bestWidth}x{bestHeight} ({(isVideoVertical ? "Vertical" : "Horizontal")}), {bestFileSize / 1024 / 1024:F1}MB");
+                                    Logger.LogDebug($"Added video: {duration}s, {bestWidth}x{bestHeight} ({(isVideoVertical ? "Vertical" : "Horizontal")}), {bestFileSize / 1024 / 1024:F1}MB - matches target {targetWidth}x{targetHeight}");
                                 }
                                 else
                                 {
-                                    Logger.LogDebug($"Skipped video: {duration}s, {bestWidth}x{bestHeight} ({(isVideoVertical ? "Vertical" : "Horizontal")}) - doesn't match requested aspect ratio {(isVertical ? "Vertical" : "Horizontal")}");
+                                    Logger.LogDebug($"Skipped video: {duration}s, {bestWidth}x{bestHeight} ({(isVideoVertical ? "Vertical" : "Horizontal")}) - doesn't match requested aspect ratio {(isVertical ? "Vertical" : "Horizontal")} or resolution {targetWidth}x{targetHeight}");
                                 }
                             }
                         }
@@ -122,11 +174,11 @@ namespace BackgroundVideoWinForms
                     } // End of JsonDocument using block
                     } // End of for loop
                     
-                    Logger.LogInfo($"Found {result.Count} suitable video results with {(isVertical ? "Vertical" : "Horizontal")} aspect ratio");
+                    Logger.LogInfo($"Found {result.Count} suitable video results with {(isVertical ? "Vertical" : "Horizontal")} aspect ratio and {targetWidth}x{targetHeight} resolution");
                     
                     if (result.Count < 5)
                     {
-                        Logger.LogWarning($"Only found {result.Count} videos with {(isVertical ? "Vertical" : "Horizontal")} aspect ratio. Consider trying a different search term or aspect ratio.");
+                        Logger.LogWarning($"Only found {result.Count} videos with {(isVertical ? "Vertical" : "Horizontal")} aspect ratio and {targetWidth}x{targetHeight} resolution. Consider trying a different search term, aspect ratio, or resolution.");
                     }
                 }
             }
