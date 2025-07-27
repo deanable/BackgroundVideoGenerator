@@ -143,7 +143,8 @@ namespace BackgroundVideoWinForms
                 var clips = await pexelsService.SearchVideosAsync(searchTerm, apiKey, duration, isVertical, 
                     cancellationToken: cancellationTokenSource.Token, 
                     targetWidth: targetWidth, 
-                    targetHeight: targetHeight);
+                    targetHeight: targetHeight,
+                    targetFrameRate: 30);
                 searchStopwatch.Stop();
                 Logger.LogPerformance("Pexels API Search", searchStopwatch.Elapsed, $"Found {clips?.Count ?? 0} clips");
                 

@@ -15,15 +15,16 @@ namespace BackgroundVideoWinForms
         public int Width { get; set; }
         public int Height { get; set; }
         public int FileSize { get; set; } // in bytes
+        public int FrameRate { get; set; } // in fps
     }
 
     public class PexelsService
     {
         private const string PEXELS_API_URL = "https://api.pexels.com/videos/search";
 
-        public async Task<List<PexelsVideoClip>> SearchVideosAsync(string searchTerm, string apiKey, int targetDurationSeconds = 60, bool isVertical = false, int maxPages = 3, CancellationToken cancellationToken = default, int targetWidth = 1920, int targetHeight = 1080)
+        public async Task<List<PexelsVideoClip>> SearchVideosAsync(string searchTerm, string apiKey, int targetDurationSeconds = 60, bool isVertical = false, int maxPages = 3, CancellationToken cancellationToken = default, int targetWidth = 1920, int targetHeight = 1080, int targetFrameRate = 30)
         {
-            Logger.LogApiCall("Pexels Search", $"term={searchTerm}, targetDuration={targetDurationSeconds}s, aspectRatio={(isVertical ? "Vertical" : "Horizontal")}, targetResolution={targetWidth}x{targetHeight}", true);
+            Logger.LogApiCall("Pexels Search", $"term={searchTerm}, targetDuration={targetDurationSeconds}s, aspectRatio={(isVertical ? "Vertical" : "Horizontal")}, targetResolution={targetWidth}x{targetHeight}, targetFrameRate={targetFrameRate}fps", true);
             var result = new List<PexelsVideoClip>();
             try
             {
@@ -66,6 +67,7 @@ namespace BackgroundVideoWinForms
                             int bestWidth = 0;
                             int bestHeight = 0;
                             int bestFileSize = 0;
+                            int bestFrameRate = 30;
                             
                             foreach (var file in video.GetProperty("video_files").EnumerateArray())
                             {
@@ -73,6 +75,19 @@ namespace BackgroundVideoWinForms
                                 int height = file.GetProperty("height").GetInt32();
                                 string link = file.GetProperty("link").GetString();
                                 int fileSize = file.TryGetProperty("file_size", out _) ? file.GetProperty("file_size").GetInt32() : 0;
+                                
+                                // Extract frame rate from URL or metadata
+                                int frameRate = 30; // Default frame rate
+                                if (link.Contains("30fps"))
+                                    frameRate = 30;
+                                else if (link.Contains("25fps"))
+                                    frameRate = 25;
+                                else if (link.Contains("24fps"))
+                                    frameRate = 24;
+                                else if (link.Contains("60fps"))
+                                    frameRate = 60;
+                                else if (link.Contains("50fps"))
+                                    frameRate = 50;
                                 
                                 // Filter by target resolution to minimize normalization work
                                 bool resolutionMatches = false;
@@ -126,8 +141,32 @@ namespace BackgroundVideoWinForms
                                     resolutionMatches = widthClose && heightClose;
                                 }
                                 
-                                // Accept files that match resolution and size criteria
-                                if (resolutionMatches && fileSize < 1000 * 1024 * 1024) // Less than 1GB
+                                // Filter by frame rate to avoid conversion issues
+                                bool frameRateMatches = false;
+                                
+                                // Accept exact frame rate match
+                                if (frameRate == targetFrameRate)
+                                {
+                                    frameRateMatches = true;
+                                }
+                                // Accept common compatible frame rates (24fps for 30fps target, 25fps for 30fps target)
+                                else if (targetFrameRate == 30 && (frameRate == 24 || frameRate == 25))
+                                {
+                                    frameRateMatches = true;
+                                }
+                                // Accept 30fps for 25fps target
+                                else if (targetFrameRate == 25 && frameRate == 30)
+                                {
+                                    frameRateMatches = true;
+                                }
+                                // Accept 24fps for 25fps target
+                                else if (targetFrameRate == 25 && frameRate == 24)
+                                {
+                                    frameRateMatches = true;
+                                }
+                                
+                                // Accept files that match resolution, frame rate, and size criteria
+                                if (resolutionMatches && frameRateMatches && fileSize < 1000 * 1024 * 1024) // Less than 1GB
                                 {
                                     if (width > bestWidth || (width == bestWidth && fileSize < bestFileSize))
                                     {
@@ -135,6 +174,7 @@ namespace BackgroundVideoWinForms
                                         bestHeight = height;
                                         bestUrl = link;
                                         bestFileSize = fileSize;
+                                        bestFrameRate = frameRate;
                                     }
                                 }
                             }
@@ -153,14 +193,15 @@ namespace BackgroundVideoWinForms
                                         Duration = duration,
                                         Width = bestWidth,
                                         Height = bestHeight,
-                                        FileSize = bestFileSize
+                                        FileSize = bestFileSize,
+                                        FrameRate = bestFrameRate
                                     });
                                     count++;
-                                    Logger.LogDebug($"Added video: {duration}s, {bestWidth}x{bestHeight} ({(isVideoVertical ? "Vertical" : "Horizontal")}), {bestFileSize / 1024 / 1024:F1}MB - matches target {targetWidth}x{targetHeight}");
+                                    Logger.LogDebug($"Added video: {duration}s, {bestWidth}x{bestHeight} ({(isVideoVertical ? "Vertical" : "Horizontal")}), {bestFileSize / 1024 / 1024:F1}MB, {bestFrameRate}fps - matches target {targetWidth}x{targetHeight} {targetFrameRate}fps");
                                 }
                                 else
                                 {
-                                    Logger.LogDebug($"Skipped video: {duration}s, {bestWidth}x{bestHeight} ({(isVideoVertical ? "Vertical" : "Horizontal")}) - doesn't match requested aspect ratio {(isVertical ? "Vertical" : "Horizontal")} or resolution {targetWidth}x{targetHeight}");
+                                    Logger.LogDebug($"Skipped video: {duration}s, {bestWidth}x{bestHeight} ({(isVideoVertical ? "Vertical" : "Horizontal")}) - doesn't match requested aspect ratio {(isVertical ? "Vertical" : "Horizontal")}, resolution {targetWidth}x{targetHeight}, or frame rate {targetFrameRate}fps");
                                 }
                             }
                         }
@@ -174,11 +215,11 @@ namespace BackgroundVideoWinForms
                     } // End of JsonDocument using block
                     } // End of for loop
                     
-                    Logger.LogInfo($"Found {result.Count} suitable video results with {(isVertical ? "Vertical" : "Horizontal")} aspect ratio and {targetWidth}x{targetHeight} resolution");
+                    Logger.LogInfo($"Found {result.Count} suitable video results with {(isVertical ? "Vertical" : "Horizontal")} aspect ratio, {targetWidth}x{targetHeight} resolution, and {targetFrameRate}fps frame rate");
                     
                     if (result.Count < 5)
                     {
-                        Logger.LogWarning($"Only found {result.Count} videos with {(isVertical ? "Vertical" : "Horizontal")} aspect ratio and {targetWidth}x{targetHeight} resolution. Consider trying a different search term, aspect ratio, or resolution.");
+                        Logger.LogWarning($"Only found {result.Count} videos with {(isVertical ? "Vertical" : "Horizontal")} aspect ratio, {targetWidth}x{targetHeight} resolution, and {targetFrameRate}fps frame rate. Consider trying a different search term, aspect ratio, resolution, or frame rate.");
                     }
                 }
             }
