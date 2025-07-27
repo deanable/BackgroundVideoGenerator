@@ -118,7 +118,8 @@ namespace BackgroundVideoWinForms
                 Logger.LogPipelineStep("API Search", $"Searching for '{searchTerm}' with duration {duration}s and resolution {resolution}");
                 Logger.LogApiCall("Pexels Search", $"term={searchTerm}, duration={duration}s", true);
                 
-                var clips = await pexelsService.SearchVideosAsync(searchTerm, apiKey, duration);
+                bool isVertical = radioButtonVertical.Checked;
+                var clips = await pexelsService.SearchVideosAsync(searchTerm, apiKey, duration, isVertical);
                 searchStopwatch.Stop();
                 Logger.LogPerformance("Pexels API Search", searchStopwatch.Elapsed, $"Found {clips?.Count ?? 0} clips");
                 
@@ -678,6 +679,15 @@ namespace BackgroundVideoWinForms
                     continue;
                 }
                 
+                // Verify aspect ratio compatibility
+                bool isClipVertical = clip.Height > clip.Width;
+                bool isTargetVertical = radioButtonVertical.Checked;
+                if (isClipVertical != isTargetVertical)
+                {
+                    Logger.LogDebug($"Skipping clip with wrong aspect ratio: {clip.Width}x{clip.Height} ({(isClipVertical ? "Vertical" : "Horizontal")}) for {(isTargetVertical ? "Vertical" : "Horizontal")} target");
+                    continue;
+                }
+                
                 // Stop if we have enough duration or too many clips
                 if (accumulatedDuration >= totalDuration || selectedClips.Count >= maxClips)
                     break;
@@ -687,7 +697,7 @@ namespace BackgroundVideoWinForms
                 {
                     accumulatedDuration += clip.Duration;
                     selectedClips.Add(clip);
-                    Logger.LogDebug($"Selected clip: {clip.Duration}s (total: {accumulatedDuration}s)");
+                    Logger.LogDebug($"Selected clip: {clip.Duration}s, {clip.Width}x{clip.Height} ({(isClipVertical ? "Vertical" : "Horizontal")}) (total: {accumulatedDuration}s)");
                 }
             }
             
