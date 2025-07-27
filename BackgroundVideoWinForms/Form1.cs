@@ -79,6 +79,13 @@ namespace BackgroundVideoWinForms
             cancellationTokenSource = new CancellationTokenSource();
             isProcessing = true;
             
+            // Reset progress tracking variables
+            totalFrames = 0;
+            currentFrame = 0;
+            totalDuration = 0;
+            currentTime = 0;
+            Logger.LogDebug("Reset progress tracking variables for new encoding session");
+            
             // Update UI
             buttonStart.Enabled = false;
             buttonCancel.Enabled = true;
@@ -412,29 +419,60 @@ namespace BackgroundVideoWinForms
                     // Prioritize frame-based progress calculation for more accuracy
                     if (totalFrames > 0 && currentFrame > 0)
                     {
-                        // Use frame-based progress for most accurate tracking
-                        double frameProgressPercent = Math.Min(95.0, (double)currentFrame / totalFrames * 100.0);
-                        int progressValue = (int)Math.Round(frameProgressPercent);
-                        
-                        this.BeginInvoke((Action)(() =>
+                        // Validate that current frame doesn't exceed total frames
+                        if (currentFrame > totalFrames)
                         {
-                            progressBar.Value = Math.Min(progressValue, progressBar.Maximum);
-                            string speed = speedMatch.Success ? $" ({speedMatch.Groups[1].Value}x)" : "";
-                            string timeDisplay = $"{hours:D2}:{minutes:D2}:{seconds:F1}";
+                            Logger.LogWarning($"Current frame ({currentFrame:N0}) exceeds total frames ({totalFrames:N0}) - using time-based progress instead");
+                            // Fall back to time-based progress
+                            double rawProgressPercent = (currentTime / totalDuration) * 100.0;
+                            double progressPercent = Math.Min(95.0, rawProgressPercent);
+                            int progressValue = (int)Math.Round(progressPercent);
                             
-                            // Show frame-based progress with frame count
-                            if (frameProgressPercent >= 95.0)
+                            this.BeginInvoke((Action)(() =>
                             {
-                                labelStatus.Text = $"Encoding: Finalizing... {timeDisplay} ({currentFrame:N0}/{totalFrames:N0} frames){speed}";
-                            }
-                            else
-                            {
-                                labelStatus.Text = $"Encoding: {frameProgressPercent:F1}% - {timeDisplay} ({currentFrame:N0}/{totalFrames:N0} frames){speed}";
-                            }
+                                progressBar.Value = Math.Min(progressValue, progressBar.Maximum);
+                                string speed = speedMatch.Success ? $" ({speedMatch.Groups[1].Value}x)" : "";
+                                string timeDisplay = $"{hours:D2}:{minutes:D2}:{seconds:F1}";
+                                
+                                // Show time-based progress with warning
+                                if (rawProgressPercent >= 95.0)
+                                {
+                                    labelStatus.Text = $"Encoding: Finalizing... {timeDisplay} (frame count error){speed}";
+                                }
+                                else
+                                {
+                                    labelStatus.Text = $"Encoding: {progressPercent:F1}% - {timeDisplay} (frame count error){speed}";
+                                }
+                                
+                                Logger.LogDebug($"Time-based progress (fallback): {progressPercent:F1}% at {timeDisplay}");
+                            }));
+                        }
+                        else
+                        {
+                            // Use frame-based progress for most accurate tracking
+                            double frameProgressPercent = Math.Min(95.0, (double)currentFrame / totalFrames * 100.0);
+                            int progressValue = (int)Math.Round(frameProgressPercent);
                             
-                            // Log frame-based progress updates
-                            Logger.LogDebug($"Frame-based progress: {frameProgressPercent:F1}% ({currentFrame:N0}/{totalFrames:N0} frames) at {timeDisplay}");
-                        }));
+                            this.BeginInvoke((Action)(() =>
+                            {
+                                progressBar.Value = Math.Min(progressValue, progressBar.Maximum);
+                                string speed = speedMatch.Success ? $" ({speedMatch.Groups[1].Value}x)" : "";
+                                string timeDisplay = $"{hours:D2}:{minutes:D2}:{seconds:F1}";
+                                
+                                // Show frame-based progress with frame count
+                                if (frameProgressPercent >= 95.0)
+                                {
+                                    labelStatus.Text = $"Encoding: Finalizing... {timeDisplay} ({currentFrame:N0}/{totalFrames:N0} frames){speed}";
+                                }
+                                else
+                                {
+                                    labelStatus.Text = $"Encoding: {frameProgressPercent:F1}% - {timeDisplay} ({currentFrame:N0}/{totalFrames:N0} frames){speed}";
+                                }
+                                
+                                // Log frame-based progress updates
+                                Logger.LogDebug($"Frame-based progress: {frameProgressPercent:F1}% ({currentFrame:N0}/{totalFrames:N0} frames) at {timeDisplay}");
+                            }));
+                        }
                     }
                     else if (totalDuration > 0)
                     {
@@ -495,7 +533,18 @@ namespace BackgroundVideoWinForms
             totalFrames = (long)(duration * targetFrameRate);
             
             Logger.LogInfo($"Set total duration for progress tracking: {duration:F2}s");
-            Logger.LogInfo($"Calculated total frames: {totalFrames} (duration: {duration:F2}s × {targetFrameRate}fps)");
+            Logger.LogInfo($"Calculated total frames: {totalFrames:N0} (duration: {duration:F2}s × {targetFrameRate}fps)");
+            
+            // Validate frame calculation
+            if (totalFrames <= 0)
+            {
+                Logger.LogWarning($"Invalid total frames calculated: {totalFrames} - using fallback calculation");
+                // Fallback: use target duration from UI
+                int targetDurationMinutes = trackBarDuration.Value;
+                double targetDurationSeconds = targetDurationMinutes * 60.0;
+                totalFrames = (long)(targetDurationSeconds * targetFrameRate);
+                Logger.LogInfo($"Fallback total frames: {totalFrames:N0} (target: {targetDurationMinutes}min × 60s × {targetFrameRate}fps)");
+            }
             
             // Validate duration
             if (duration <= 0)
@@ -511,6 +560,10 @@ namespace BackgroundVideoWinForms
             {
                 Logger.LogInfo($"Total duration set successfully: {duration:F2}s - progress bar will show accurate percentage");
             }
+            
+            // Reset current frame counter to prevent accumulation issues
+            currentFrame = 0;
+            Logger.LogDebug($"Reset current frame counter to 0");
         }
 
         private double GetVideoDuration(string filePath)
