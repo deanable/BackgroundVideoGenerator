@@ -9,7 +9,7 @@ namespace BackgroundVideoWinForms
     {
         public async Task<string> DownloadAsync(PexelsVideoClip clip, string targetPath)
         {
-            Logger.Log($"VideoDownloader: Downloading {clip.Url} to {targetPath}");
+            Logger.LogDebug($"Downloading {clip.Url} to {Path.GetFileName(targetPath)}");
             try
             {
                 using (var client = new HttpClient())
@@ -18,11 +18,13 @@ namespace BackgroundVideoWinForms
                 {
                     await response.Content.CopyToAsync(fs);
                 }
-                Logger.Log($"VideoDownloader: Downloaded {targetPath} ({new FileInfo(targetPath).Length} bytes)");
+                
+                var fileInfo = new FileInfo(targetPath);
+                Logger.LogFileOperation("Downloaded", targetPath, fileInfo.Length);
             }
             catch (Exception ex)
             {
-                Logger.LogException(ex, $"VideoDownloader.DownloadAsync {clip.Url}");
+                Logger.LogException(ex, $"VideoDownloader.DownloadAsync {Path.GetFileName(targetPath)}");
             }
             return targetPath;
         }

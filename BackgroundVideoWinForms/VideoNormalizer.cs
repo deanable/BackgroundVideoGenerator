@@ -11,14 +11,14 @@ namespace BackgroundVideoWinForms
     {
         public (int, int) ProbeDimensions(string filePath)
         {
-            Logger.Log($"VideoNormalizer: Probing dimensions for {filePath}");
+            Logger.LogDebug($"Probing dimensions for {Path.GetFileName(filePath)}");
             try
             {
                 string ffprobePath = @"C:\Program Files (x86)\ffmpeg-2025-07-23-git-829680f96a-full_build\bin\ffprobe.exe";
                 
                 if (!File.Exists(ffprobePath))
                 {
-                    Logger.Log($"VideoNormalizer: ffprobe not found at {ffprobePath}");
+                    Logger.LogError($"ffprobe not found at {ffprobePath}");
                     return (0, 0);
                 }
                 
@@ -30,7 +30,7 @@ namespace BackgroundVideoWinForms
                     UseShellExecute = false,
                     CreateNoWindow = true
                 };
-                Logger.Log($"VideoNormalizer: ffprobe {psi.Arguments}");
+                Logger.LogFfmpegCommand($"ffprobe {psi.Arguments}", filePath);
                 using (var process = Process.Start(psi))
                 {
                     string output = process.StandardOutput.ReadLine();
@@ -40,7 +40,7 @@ namespace BackgroundVideoWinForms
                         var parts = output.Split('x');
                         if (parts.Length == 2 && int.TryParse(parts[0], out int w) && int.TryParse(parts[1], out int h))
                         {
-                            Logger.Log($"VideoNormalizer: Probed {filePath} => {w}x{h}");
+                            Logger.LogDebug($"Probed {Path.GetFileName(filePath)} => {w}x{h}");
                             return (w, h);
                         }
                     }
@@ -48,13 +48,15 @@ namespace BackgroundVideoWinForms
             }
             catch (Exception ex)
             {
-                Logger.LogException(ex, $"VideoNormalizer.ProbeDimensions {filePath}");
+                Logger.LogException(ex, $"ProbeDimensions {Path.GetFileName(filePath)}");
             }
             return (0, 0);
         }
 
         public void Normalize(string inputPath, string outputPath, int targetWidth, int targetHeight, Action<string> progressCallback = null)
         {
+            Logger.LogPipelineStep("Video Normalization", $"Normalizing {Path.GetFileName(inputPath)} to {targetWidth}x{targetHeight}");
+            
             // Try hardware acceleration first, fallback to software if it fails
             bool useHardwareAccel = CheckHardwareAcceleration();
             
@@ -64,17 +66,16 @@ namespace BackgroundVideoWinForms
             {
                 // Use hardware acceleration for faster processing
                 ffmpegArgs = $"-y -hwaccel auto -i \"{inputPath}\" -vf scale=w={targetWidth}:h={targetHeight}:force_original_aspect_ratio=decrease,pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2 -c:v h264_nvenc -preset p7 -rc vbr -cq 26 -b:v 5M -maxrate 10M -bufsize 10M -an \"{outputPath}\"";
-                Logger.Log($"VideoNormalizer: Using hardware acceleration for {inputPath}");
+                Logger.LogInfo($"Using hardware acceleration for {Path.GetFileName(inputPath)}");
             }
             else
             {
                 // Optimized software encoding settings
                 ffmpegArgs = $"-y -i \"{inputPath}\" -vf scale=w={targetWidth}:h={targetHeight}:force_original_aspect_ratio=decrease,pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2 -c:v libx264 -preset ultrafast -crf 28 -tune fastdecode -an \"{outputPath}\"";
-                Logger.Log($"VideoNormalizer: Using software encoding for {inputPath}");
+                Logger.LogInfo($"Using software encoding for {Path.GetFileName(inputPath)}");
             }
             
-            Logger.Log($"VideoNormalizer: Normalizing {inputPath} to {outputPath} as {targetWidth}x{targetHeight}");
-            Logger.Log($"VideoNormalizer: ffmpeg {ffmpegArgs}");
+            Logger.LogFfmpegCommand(ffmpegArgs, inputPath, outputPath);
             
             try
             {
@@ -82,7 +83,7 @@ namespace BackgroundVideoWinForms
                 
                 if (!File.Exists(ffmpegPath))
                 {
-                    Logger.Log($"VideoNormalizer: ffmpeg not found at {ffmpegPath}");
+                    Logger.LogError($"ffmpeg not found at {ffmpegPath}");
                     throw new Exception($"FFmpeg not found at {ffmpegPath}");
                 }
                 
@@ -97,7 +98,7 @@ namespace BackgroundVideoWinForms
                 };
                 
                 var startTime = DateTime.Now;
-                Logger.Log($"VideoNormalizer: Starting normalization of {Path.GetFileName(inputPath)} at {startTime:HH:mm:ss.fff}");
+                Logger.LogInfo($"Starting normalization of {Path.GetFileName(inputPath)} at {startTime:HH:mm:ss.fff}");
                 
                 using (var process = Process.Start(psi))
                 {

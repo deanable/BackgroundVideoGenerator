@@ -10,52 +10,52 @@ namespace BackgroundVideoWinForms
     {
         public void Concatenate(List<string> inputFiles, string outputFile, string resolution, Action<string> progressCallback)
         {
-            Logger.Log($"VideoConcatenator: Starting concatenation to {outputFile} with resolution {resolution}");
+            Logger.LogPipelineStep("Video Concatenation", $"Starting concatenation to {Path.GetFileName(outputFile)} with resolution {resolution}");
             
             // Validate input files
             var validFiles = new List<string>();
             double totalDuration = 0;
             
-            Logger.Log($"VideoConcatenator: Starting duration check for {inputFiles.Count} files");
+            Logger.LogInfo($"Starting duration check for {inputFiles.Count} files");
             
             foreach (var file in inputFiles)
             {
-                Logger.Log($"VideoConcatenator: Checking file: {file}");
+                Logger.LogDebug($"Checking file: {Path.GetFileName(file)}");
                 
                 if (File.Exists(file) && new FileInfo(file).Length > 0)
                 {
-                    Logger.Log($"VideoConcatenator: File exists and has content, checking duration...");
+                    Logger.LogDebug($"File exists and has content, checking duration...");
                     double duration = GetDuration(file);
-                    Logger.Log($"VideoConcatenator: File {Path.GetFileName(file)} duration: {duration}s");
+                    Logger.LogDebug($"File {Path.GetFileName(file)} duration: {duration}s");
                     
                     if (duration > 0 && duration <= 120) // Allow files up to 2 minutes instead of 60 seconds
                     {
                         validFiles.Add(file);
                         totalDuration += duration;
-                        Logger.Log($"VideoConcatenator: Added valid file: {Path.GetFileName(file)} (duration: {duration}s, total: {totalDuration}s)");
+                        Logger.LogDebug($"Added valid file: {Path.GetFileName(file)} (duration: {duration}s, total: {totalDuration}s)");
                     }
                     else
                     {
-                        Logger.Log($"VideoConcatenator: Skipping file with invalid duration {duration}s: {file}");
+                        Logger.LogWarning($"Skipping file with invalid duration {duration}s: {Path.GetFileName(file)}");
                     }
                 }
                 else
                 {
-                    Logger.Log($"VideoConcatenator: Skipping invalid or empty file: {file}");
+                    Logger.LogWarning($"Skipping invalid or empty file: {Path.GetFileName(file)}");
                 }
             }
             
-            Logger.Log($"VideoConcatenator: Duration check complete - {validFiles.Count} valid files out of {inputFiles.Count} total files");
-            Logger.Log($"VideoConcatenator: Total duration of valid files: {totalDuration}s");
+            Logger.LogInfo($"Duration check complete - {validFiles.Count} valid files out of {inputFiles.Count} total files");
+            Logger.LogInfo($"Total duration of valid files: {totalDuration}s");
             
             if (validFiles.Count == 0)
             {
-                Logger.Log($"VideoConcatenator: No valid input files for concatenation.");
+                Logger.LogError("No valid input files for concatenation.");
                 progressCallback?.Invoke("Error: No valid input files for concatenation.");
                 return;
             }
             
-            Logger.Log($"VideoConcatenator: Total duration of {validFiles.Count} files: {totalDuration:F1}s");
+            Logger.LogInfo($"Total duration of {validFiles.Count} files: {totalDuration:F1}s");
             
             // Create a more robust concatenation command
             string tempListFile = Path.Combine(Path.GetTempPath(), $"pexels_concat_{Guid.NewGuid()}.txt");
@@ -69,7 +69,7 @@ namespace BackgroundVideoWinForms
             
             // Improved FFmpeg command with better settings for playback compatibility
             string ffmpegArgs = $"-y -f concat -safe 0 -i \"{tempListFile}\" -vf scale={resolution}:force_original_aspect_ratio=decrease,pad={resolution}:(ow-iw)/2:(oh-ih)/2 -c:v libx264 -preset fast -crf 23 -an -r 30 -pix_fmt yuv420p -movflags +faststart -max_muxing_queue_size 1024 \"{outputFile}\"";
-            Logger.Log($"VideoConcatenator: ffmpeg {ffmpegArgs}");
+            Logger.LogFfmpegCommand(ffmpegArgs, tempListFile, outputFile);
             
             try
             {
@@ -77,7 +77,7 @@ namespace BackgroundVideoWinForms
                 
                 if (!File.Exists(ffmpegPath))
                 {
-                    Logger.Log($"VideoConcatenator: ffmpeg not found at {ffmpegPath}");
+                    Logger.LogError($"ffmpeg not found at {ffmpegPath}");
                     progressCallback?.Invoke($"Error: FFmpeg not found at {ffmpegPath}");
                     return;
                 }
@@ -94,8 +94,8 @@ namespace BackgroundVideoWinForms
                 using (var process = Process.Start(psi))
                 {
                     var startTime = DateTime.Now;
-                    Logger.Log($"VideoConcatenator: Starting FFmpeg concatenation at {startTime:HH:mm:ss.fff}");
-                    Logger.Log($"VideoConcatenator: Expected total duration: {totalDuration:F1} seconds");
+                    Logger.LogInfo($"Starting FFmpeg concatenation at {startTime:HH:mm:ss.fff}");
+                    Logger.LogInfo($"Expected total duration: {totalDuration:F1} seconds");
                     process.ErrorDataReceived += (s, e) =>
                     {
                         if (e.Data != null)

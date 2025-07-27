@@ -22,7 +22,7 @@ namespace BackgroundVideoWinForms
 
         public async Task<List<PexelsVideoClip>> SearchVideosAsync(string searchTerm, string apiKey, int targetDurationSeconds = 60)
         {
-            Logger.Log($"PexelsService: Searching for '{searchTerm}'");
+            Logger.LogApiCall("Pexels Search", $"term={searchTerm}, targetDuration={targetDurationSeconds}s", true);
             var result = new List<PexelsVideoClip>();
             try
             {
@@ -33,11 +33,11 @@ namespace BackgroundVideoWinForms
                     // Phase 1 Randomization: Random page selection
                     int randomPage = Random.Shared.Next(1, 21); // Pages 1-20 (800 videos total)
                     string url = $"{PEXELS_API_URL}?query={Uri.EscapeDataString(searchTerm)}&per_page=40&page={randomPage}";
-                    Logger.Log($"PexelsService: GET {url} (random page {randomPage})");
+                    Logger.LogDebug($"GET {url} (random page {randomPage})");
                     var response = await client.GetAsync(url);
                     if (!response.IsSuccessStatusCode)
                     {
-                        Logger.Log($"PexelsService: API call failed with status {response.StatusCode}");
+                        Logger.LogError($"API call failed with status {response.StatusCode}");
                         return result;
                     }
                     var json = await response.Content.ReadAsStringAsync();
@@ -53,7 +53,7 @@ namespace BackgroundVideoWinForms
                             int maxDuration = Math.Max(60, targetDurationSeconds / 2); // Allow up to half the target duration
                             if (duration < 3 || duration > maxDuration)
                             {
-                                Logger.Log($"Skipping video with duration {duration}s (outside acceptable range 3-{maxDuration}s)");
+                                Logger.LogDebug($"Skipping video with duration {duration}s (outside acceptable range 3-{maxDuration}s)");
                                 continue;
                             }
                             
@@ -93,10 +93,10 @@ namespace BackgroundVideoWinForms
                                     FileSize = bestFileSize
                                 });
                                 count++;
-                                Logger.Log($"Added video: {duration}s, {bestWidth}x{bestHeight}, {bestFileSize / 1024 / 1024:F1}MB");
+                                Logger.LogDebug($"Added video: {duration}s, {bestWidth}x{bestHeight}, {bestFileSize / 1024 / 1024:F1}MB");
                             }
                         }
-                        Logger.Log($"PexelsService: Found {count} suitable video results");
+                        Logger.LogInfo($"Found {count} suitable video results");
                     }
                 }
             }
@@ -104,6 +104,7 @@ namespace BackgroundVideoWinForms
             {
                 Logger.LogException(ex, "PexelsService.SearchVideosAsync");
             }
+            Logger.LogApiCall("Pexels Search", $"term={searchTerm}", result.Count > 0);
             return result;
         }
     }
