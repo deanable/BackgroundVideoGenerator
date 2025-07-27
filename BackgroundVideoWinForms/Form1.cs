@@ -715,16 +715,60 @@ namespace BackgroundVideoWinForms
                 if (accumulatedDuration >= totalDuration || selectedClips.Count >= maxClips)
                     break;
                     
-                // Allow exceeding target by up to 30% for better coverage
-                if (accumulatedDuration + clip.Duration <= totalDuration * 1.3)
+                // More precise duration control - allow exceeding by only 15% instead of 30%
+                // This will result in videos closer to the target duration
+                if (accumulatedDuration + clip.Duration <= totalDuration * 1.15)
                 {
                     accumulatedDuration += clip.Duration;
                     selectedClips.Add(clip);
                     Logger.LogDebug($"Selected clip: {clip.Duration}s, {clip.Width}x{clip.Height} ({(isClipVertical ? "Vertical" : "Horizontal")}) (total: {accumulatedDuration}s)");
                 }
+                else
+                {
+                    Logger.LogDebug($"Skipping clip {clip.Duration}s - would exceed target duration limit (current: {accumulatedDuration}s, limit: {totalDuration * 1.15:F1}s)");
+                }
             }
             
             Logger.LogInfo($"Selected {selectedClips.Count} clips with total duration {accumulatedDuration}s (target: {totalDuration}s)");
+            
+            // If we have too few clips or duration is too short, try to add more clips
+            if (selectedClips.Count < 3 || accumulatedDuration < totalDuration * 0.8)
+            {
+                Logger.LogInfo($"Duration too short ({accumulatedDuration}s) or too few clips ({selectedClips.Count}), attempting to add more clips");
+                
+                // Try to add shorter clips to get closer to target duration
+                foreach (var clip in shuffledClips)
+                {
+                    // Skip if we already have this clip
+                    if (selectedClips.Any(c => c.Url == clip.Url))
+                        continue;
+                        
+                    // Skip clips that are too long
+                    int maxClipDuration = Math.Max(30, totalDuration / 6); // Allow shorter clips
+                    if (clip.Duration > maxClipDuration)
+                        continue;
+                        
+                    // Verify aspect ratio compatibility
+                    bool isClipVertical = clip.Height > clip.Width;
+                    bool isTargetVertical = radioButtonVertical.Checked;
+                    if (isClipVertical != isTargetVertical)
+                        continue;
+                        
+                    // Add clip if it gets us closer to target without exceeding too much
+                    if (accumulatedDuration + clip.Duration <= totalDuration * 1.2)
+                    {
+                        accumulatedDuration += clip.Duration;
+                        selectedClips.Add(clip);
+                        Logger.LogDebug($"Added additional clip: {clip.Duration}s (total: {accumulatedDuration}s)");
+                        
+                        // Stop if we have enough duration
+                        if (accumulatedDuration >= totalDuration * 0.9)
+                            break;
+                    }
+                }
+                
+                Logger.LogInfo($"After additional selection: {selectedClips.Count} clips with total duration {accumulatedDuration}s");
+            }
             
             if (selectedClips.Count == 0)
             {
