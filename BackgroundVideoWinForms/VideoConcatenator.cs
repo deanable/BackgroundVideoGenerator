@@ -3,12 +3,13 @@ using System.Diagnostics;
 using System.IO;
 using System;
 using System.Linq;
+using System.Threading;
 
 namespace BackgroundVideoWinForms
 {
     public class VideoConcatenator
     {
-        public void Concatenate(List<string> inputFiles, string outputFile, string resolution, Action<string> progressCallback)
+        public void Concatenate(List<string> inputFiles, string outputFile, string resolution, Action<string> progressCallback, CancellationToken? cancellationToken = null)
         {
             Logger.LogPipelineStep("Video Concatenation", $"Starting concatenation to {Path.GetFileName(outputFile)} with resolution {resolution}");
             
@@ -100,43 +101,61 @@ namespace BackgroundVideoWinForms
                     {
                         if (e.Data != null)
                         {
-                            Logger.Log($"FFmpeg: {e.Data}");
-                            if (progressCallback != null)
+                            // Check for cancellation
+                            if (cancellationToken?.IsCancellationRequested == true)
                             {
-                                var currentTime = DateTime.Now;
-                                var elapsed = currentTime - startTime;
-                                var line = e.Data;
-                                var idx = line.IndexOf("time=");
-                                if (idx >= 0)
+                                try
                                 {
-                                    var timePart = line.Substring(idx + 5);
-                                    var spaceIdx = timePart.IndexOf(' ');
-                                    if (spaceIdx > 0)
-                                        timePart = timePart.Substring(0, spaceIdx);
-                                    
-                                    // Calculate progress percentage with bounds checking
-                                    if (TimeSpan.TryParse(timePart, out var ffmpegTime) && totalDuration > 0)
+                                    if (!process.HasExited)
                                     {
-                                        double progressPercent = (ffmpegTime.TotalSeconds / totalDuration) * 100;
-                                        // Cap progress at 100% to prevent impossible values
-                                        progressPercent = Math.Min(progressPercent, 100.0);
-                                        progressCallback($"Encoding: {progressPercent.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)}% (FFmpeg: {timePart}, Elapsed: {elapsed:mm\\:ss\\.ff})");
-                                    }
-                                    else
-                                    {
-                                        progressCallback($"Encoding: {timePart} (Elapsed: {elapsed:mm\\:ss\\.ff})");
+                                        process.Kill();
+                                        Logger.LogInfo("FFmpeg process killed due to cancellation");
                                     }
                                 }
+                                catch (Exception ex)
+                                {
+                                    Logger.LogWarning($"Error killing FFmpeg process: {ex.Message}");
+                                }
+                                return;
                             }
+                            
+                            Logger.Log($"FFmpeg: {e.Data}");
+                            progressCallback?.Invoke(e.Data);
                         }
                     };
                     
                     process.BeginErrorReadLine();
                     
-                    // Add timeout to prevent infinite processing - increased for longer videos
-                    if (!process.WaitForExit(1200000)) // 20 minute timeout for longer videos
+                    // Wait for process completion with cancellation support
+                    bool processCompleted = false;
+                    while (!processCompleted && !process.HasExited)
                     {
-                        Logger.Log("VideoConcatenator: Process timeout - killing FFmpeg");
+                        // Check for cancellation
+                        if (cancellationToken?.IsCancellationRequested == true)
+                        {
+                            try
+                            {
+                                if (!process.HasExited)
+                                {
+                                    process.Kill();
+                                    Logger.LogInfo("FFmpeg process killed due to cancellation");
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.LogWarning($"Error killing FFmpeg process: {ex.Message}");
+                            }
+                            return;
+                        }
+                        
+                        // Wait a short time before checking again
+                        processCompleted = process.WaitForExit(1000); // 1 second timeout
+                    }
+                    
+                    // Add timeout to prevent infinite processing - increased for longer videos
+                    if (!processCompleted)
+                    {
+                        Logger.LogWarning("VideoConcatenator: Process timeout - killing FFmpeg");
                         try { process.Kill(); } catch { }
                         progressCallback?.Invoke("Error: Process timeout");
                         return;

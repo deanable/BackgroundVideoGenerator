@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Net.Http;
@@ -18,6 +19,16 @@ namespace BackgroundVideoWinForms
         private VideoDownloader videoDownloader = new VideoDownloader();
         private VideoNormalizer videoNormalizer = new VideoNormalizer();
         private VideoConcatenator videoConcatenator = new VideoConcatenator();
+        
+        // Cancellation support
+        private CancellationTokenSource cancellationTokenSource;
+        private bool isProcessing = false;
+        
+        // FFmpeg progress tracking
+        private long totalFrames = 0;
+        private long currentFrame = 0;
+        private double totalDuration = 0;
+        private double currentTime = 0;
 
         public Form1()
         {
@@ -52,9 +63,23 @@ namespace BackgroundVideoWinForms
 
         private async void buttonStart_Click(object sender, EventArgs e)
         {
+            if (isProcessing)
+            {
+                MessageBox.Show("Processing is already in progress. Please wait or cancel the current operation.");
+                return;
+            }
+
             var pipelineStopwatch = Stopwatch.StartNew();
             Logger.LogPipelineStep("Pipeline Start", "User initiated video generation");
             Logger.LogMemoryUsage();
+            
+            // Initialize cancellation token
+            cancellationTokenSource = new CancellationTokenSource();
+            isProcessing = true;
+            
+            // Update UI
+            buttonStart.Enabled = false;
+            buttonCancel.Enabled = true;
             
             // Save current settings before processing
             SaveSettingsToRegistry();
@@ -70,12 +95,14 @@ namespace BackgroundVideoWinForms
             {
                 Logger.LogError("No API key entered");
                 MessageBox.Show("Please enter your Pexels API key.");
+                ResetUI();
                 return;
             }
             if (string.IsNullOrWhiteSpace(searchTerm))
             {
                 Logger.LogError("No search term entered");
                 MessageBox.Show("Please enter a search term.");
+                ResetUI();
                 return;
             }
 
@@ -111,7 +138,7 @@ namespace BackgroundVideoWinForms
                 progressBar.Value = 0;
                 
                 var downloadNormalizeStopwatch = Stopwatch.StartNew();
-                var downloadedFiles = await DownloadAndNormalizeClipsAsync(clips, duration, resolution);
+                var downloadedFiles = await DownloadAndNormalizeClipsAsync(clips, duration, resolution, cancellationTokenSource.Token);
                 downloadNormalizeStopwatch.Stop();
                 Logger.LogPerformance("Download and Normalize", downloadNormalizeStopwatch.Elapsed, $"Processed {downloadedFiles.Count} files");
                 
@@ -128,17 +155,39 @@ namespace BackgroundVideoWinForms
                 // 3. Concatenate clips using FFmpeg (no audio, selected resolution)
                 Logger.LogPipelineStep("Video Concatenation", $"Concatenating {downloadedFiles.Count} files");
                 labelStatus.Text = "Rendering final video (concatenating)...";
-                progressBar.Style = ProgressBarStyle.Marquee;
+                progressBar.Style = ProgressBarStyle.Continuous;
+                progressBar.Maximum = 100;
+                progressBar.Value = 0;
+                
                 var concatStopwatch = new System.Diagnostics.Stopwatch();
                 concatStopwatch.Start();
                 string safeSearchTerm = string.Join("_", searchTerm.Split(Path.GetInvalidFileNameChars()));
                 string outputFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"{safeSearchTerm}_{System.DateTime.Now:yyyyMMddHHmmss}.mp4");
                 
+                // Calculate total duration for progress tracking
+                double totalVideoDuration = 0;
+                foreach (var file in downloadedFiles)
+                {
+                    if (File.Exists(file))
+                    {
+                        double fileDuration = GetVideoDuration(file);
+                        totalVideoDuration += fileDuration;
+                        Logger.LogDebug($"File {Path.GetFileName(file)} duration: {fileDuration:F2}s");
+                    }
+                }
+                SetTotalDuration(totalVideoDuration);
+                Logger.LogInfo($"Total video duration calculated: {totalVideoDuration:F2}s for progress tracking");
+                
                 await Task.Run(() => videoConcatenator.Concatenate(downloadedFiles, outputFile, resolution, (progress) => {
-                    labelStatus.Invoke((System.Action)(() => {
-                        labelStatus.Text = $"Encoding: {progress}";
-                    }));
-                }));
+                    // Check for cancellation
+                    if (cancellationTokenSource?.Token.IsCancellationRequested == true)
+                    {
+                        throw new OperationCanceledException("Video concatenation was cancelled");
+                    }
+                    
+                    // Parse FFmpeg progress output
+                    ParseFFmpegProgress(progress);
+                }, cancellationTokenSource?.Token));
                 concatStopwatch.Stop();
                 Logger.LogPerformance("Video Concatenation", concatStopwatch.Elapsed, $"Output: {Path.GetFileName(outputFile)}");
                 
@@ -152,7 +201,11 @@ namespace BackgroundVideoWinForms
                 // Comprehensive cleanup of all temp files
                 Logger.LogPipelineStep("Cleanup", "Cleaning up all temporary files");
                 
-                // Clean up downloaded and normalized files
+                // Force garbage collection to release file handles
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                
+                // Clean up downloaded and normalized files with retry mechanism
                 foreach (var file in downloadedFiles)
                 {
                     try 
@@ -160,12 +213,27 @@ namespace BackgroundVideoWinForms
                         if (File.Exists(file)) 
                         {
                             File.Delete(file);
-                            Logger.LogFileOperation("Deleted Temp File", file);
+                            Logger.LogFileOperation("Deleted Temp File", Path.GetFileName(file));
                         }
                     } 
+                    catch (IOException ex) 
+                    { 
+                        Logger.LogWarning($"Failed to delete temp file {Path.GetFileName(file)}: {ex.Message}");
+                        // Try again after a short delay
+                        Thread.Sleep(100);
+                        try
+                        {
+                            File.Delete(file);
+                            Logger.LogFileOperation("Deleted Temp File (Retry)", Path.GetFileName(file));
+                        }
+                        catch (Exception retryEx)
+                        {
+                            Logger.LogWarning($"Failed to delete temp file {Path.GetFileName(file)} after retry: {retryEx.Message}");
+                        }
+                    }
                     catch (Exception ex) 
                     { 
-                        Logger.LogWarning($"Failed to delete temp file {file}: {ex.Message}");
+                        Logger.LogWarning($"Failed to delete temp file {Path.GetFileName(file)}: {ex.Message}");
                     }
                 }
                 
@@ -247,6 +315,171 @@ namespace BackgroundVideoWinForms
                 Logger.LogException(ex, "Video Generation Pipeline");
                 MessageBox.Show($"An error occurred. See log:\n{Logger.LogFilePath}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+            finally
+            {
+                ResetUI();
+            }
+        }
+
+        private void buttonCancel_Click(object sender, EventArgs e)
+        {
+            if (isProcessing && cancellationTokenSource != null)
+            {
+                Logger.LogWarning("User cancelled video generation");
+                cancellationTokenSource.Cancel();
+                labelStatus.Text = "Cancelling...";
+                buttonCancel.Enabled = false;
+            }
+        }
+
+        private void ResetUI()
+        {
+            isProcessing = false;
+            buttonStart.Enabled = true;
+            buttonCancel.Enabled = false;
+            progressBar.Style = ProgressBarStyle.Blocks;
+            progressBar.Value = 0;
+            
+            // Reset progress tracking
+            totalFrames = 0;
+            currentFrame = 0;
+            totalDuration = 0;
+            currentTime = 0;
+            
+            if (cancellationTokenSource != null)
+            {
+                cancellationTokenSource.Dispose();
+                cancellationTokenSource = null;
+            }
+            
+            // Force garbage collection to free memory
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            Logger.LogMemoryUsage();
+        }
+
+        private void ParseFFmpegProgress(string line)
+        {
+            try
+            {
+                // Only process lines that contain progress information
+                if (!line.Contains("frame=") || !line.Contains("time="))
+                    return;
+                
+                // Parse FFmpeg progress line: frame=114037 fps=736 q=29.0 size=88576KiB time=01:03:21.16 bitrate=190.9kbits/s dup=529620 drop=0 speed=24.5x elapsed=0:02:34.83
+                var frameMatch = System.Text.RegularExpressions.Regex.Match(line, @"frame=(\d+)");
+                var timeMatch = System.Text.RegularExpressions.Regex.Match(line, @"time=(\d+):(\d+):(\d+\.\d+)");
+                var speedMatch = System.Text.RegularExpressions.Regex.Match(line, @"speed=(\d+\.?\d*)x");
+                
+                if (frameMatch.Success && timeMatch.Success)
+                {
+                    currentFrame = long.Parse(frameMatch.Groups[1].Value);
+                    int hours = int.Parse(timeMatch.Groups[1].Value);
+                    int minutes = int.Parse(timeMatch.Groups[2].Value);
+                    double seconds = double.Parse(timeMatch.Groups[3].Value);
+                    currentTime = hours * 3600 + minutes * 60 + seconds;
+                    
+                    // Calculate progress percentage based on time if we have total duration
+                    if (totalDuration > 0)
+                    {
+                        double progressPercent = Math.Min(100.0, (currentTime / totalDuration) * 100.0);
+                        int progressValue = (int)Math.Round(progressPercent);
+                        
+                        this.BeginInvoke((Action)(() =>
+                        {
+                            progressBar.Value = Math.Min(progressValue, progressBar.Maximum);
+                            string speed = speedMatch.Success ? $" ({speedMatch.Groups[1].Value}x)" : "";
+                            string timeDisplay = $"{hours:D2}:{minutes:D2}:{seconds:F1}";
+                            labelStatus.Text = $"Encoding: {progressPercent:F1}% - {timeDisplay}{speed}";
+                        }));
+                    }
+                    else
+                    {
+                        // Fallback to frame-based progress if we have total frames
+                        if (totalFrames > 0)
+                        {
+                            double progressPercent = Math.Min(100.0, (double)currentFrame / totalFrames * 100.0);
+                            int progressValue = (int)Math.Round(progressPercent);
+                            
+                            this.BeginInvoke((Action)(() =>
+                            {
+                                progressBar.Value = Math.Min(progressValue, progressBar.Maximum);
+                                string speed = speedMatch.Success ? $" ({speedMatch.Groups[1].Value}x)" : "";
+                                string timeDisplay = $"{hours:D2}:{minutes:D2}:{seconds:F1}";
+                                labelStatus.Text = $"Encoding: {progressPercent:F1}% - {timeDisplay}{speed}";
+                            }));
+                        }
+                        else
+                        {
+                            // Basic progress display without percentage
+                            this.BeginInvoke((Action)(() =>
+                            {
+                                string speed = speedMatch.Success ? $" ({speedMatch.Groups[1].Value}x)" : "";
+                                string timeDisplay = $"{hours:D2}:{minutes:D2}:{seconds:F1}";
+                                labelStatus.Text = $"Encoding: {timeDisplay}{speed}";
+                            }));
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogDebug($"Error parsing FFmpeg progress: {ex.Message}");
+            }
+        }
+
+        private void SetTotalDuration(double duration)
+        {
+            totalDuration = duration;
+            Logger.LogInfo($"Set total duration for progress tracking: {duration:F2}s");
+            
+            // Validate duration
+            if (duration <= 0)
+            {
+                Logger.LogWarning("Total duration is 0 or negative - progress tracking may not work correctly");
+            }
+            else if (duration > 3600) // More than 1 hour
+            {
+                Logger.LogWarning($"Very long duration detected: {duration:F2}s - this may indicate an issue");
+            }
+        }
+
+        private double GetVideoDuration(string filePath)
+        {
+            try
+            {
+                string ffprobePath = @"C:\Program Files (x86)\ffmpeg-2025-07-23-git-829680f96a-full_build\bin\ffprobe.exe";
+                
+                if (!File.Exists(ffprobePath))
+                {
+                    Logger.LogError($"ffprobe not found at {ffprobePath}");
+                    return 0;
+                }
+                
+                var psi = new ProcessStartInfo
+                {
+                    FileName = ffprobePath,
+                    Arguments = $"-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{filePath}\"",
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                
+                using (var process = Process.Start(psi))
+                {
+                    string output = process.StandardOutput.ReadLine();
+                    process.WaitForExit(2000);
+                    if (!string.IsNullOrEmpty(output) && double.TryParse(output, out double duration))
+                    {
+                        return duration;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogException(ex, $"GetVideoDuration {Path.GetFileName(filePath)}");
+            }
+            return 0;
         }
 
         private void LoadSettingsFromRegistry()
@@ -388,7 +621,7 @@ namespace BackgroundVideoWinForms
             SaveSettingsToRegistry();
         }
 
-        private async Task<List<string>> DownloadAndNormalizeClipsAsync(List<PexelsVideoClip> clips, int totalDuration, string resolution)
+        private async Task<List<string>> DownloadAndNormalizeClipsAsync(List<PexelsVideoClip> clips, int totalDuration, string resolution, CancellationToken cancellationToken)
         {
             Logger.LogPipelineStep("Download and Normalize Start", $"Processing {clips.Count} clips for {totalDuration}s duration");
             Logger.LogMemoryUsage();
@@ -474,6 +707,9 @@ namespace BackgroundVideoWinForms
             var downloadTimes = new List<double>();
             for (int i = 0; i < clipsToProcess; i++)
             {
+                // Check for cancellation
+                cancellationToken.ThrowIfCancellationRequested();
+                
                 var clip = selectedClips[i];
                 string fileName = Path.Combine(tempDir, $"clip_{i}.mp4");
                 var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -546,6 +782,9 @@ namespace BackgroundVideoWinForms
             await Task.Run(async () => {
                 Logger.LogInfo($"Normalization phase: Probing dimensions for {clipsToProcess} clips on background thread");
                 
+                // Check for cancellation
+                cancellationToken.ThrowIfCancellationRequested();
+                
                 // Prepare input and output paths for batch processing
                 var inputPaths = new string[clipsToProcess];
                 var outputPaths = new string[clipsToProcess];
@@ -577,6 +816,9 @@ namespace BackgroundVideoWinForms
                 
                 if (clipsToNormalize > 0)
                 {
+                    // Check for cancellation
+                    cancellationToken.ThrowIfCancellationRequested();
+                    
                     // Use batch normalization for better performance on background thread
                     var normalizeInputs = inputPaths.Where((_, i) => needsNormalization[i]).ToArray();
                     var normalizeOutputs = outputPaths.Where((_, i) => needsNormalization[i]).ToArray();
@@ -585,6 +827,9 @@ namespace BackgroundVideoWinForms
                     
                     await videoNormalizer.NormalizeBatchAsync(normalizeInputs, normalizeOutputs, targetWidth, targetHeight, maxParallel, 
                         (index, progress) => {
+                            // Check for cancellation
+                            cancellationToken.ThrowIfCancellationRequested();
+                            
                             // Find the actual clip index
                             int actualIndex = Array.FindIndex(needsNormalization, x => x) + index;
                             // Update UI on main thread
@@ -592,7 +837,7 @@ namespace BackgroundVideoWinForms
                                 labelStatus.Text = $"Normalizing {actualIndex + 1} of {clipsToProcess}: {progress}";
                             }));
                             Logger.LogProgress("Normalization", index + 1, clipsToNormalize, progress);
-                        });
+                        }, cancellationToken);
                     
                     // Update downloadedFiles array with normalized paths
                     for (int i = 0; i < clipsToProcess; i++)

@@ -25,6 +25,7 @@ namespace BackgroundVideoWinForms
             radioButtonHorizontal = new System.Windows.Forms.RadioButton();
             radioButtonVertical = new System.Windows.Forms.RadioButton();
             buttonStart = new System.Windows.Forms.Button();
+            buttonCancel = new System.Windows.Forms.Button();
             progressBar = new System.Windows.Forms.ProgressBar();
             labelStatus = new System.Windows.Forms.Label();
             labelApiKey = new System.Windows.Forms.Label();
@@ -140,26 +141,37 @@ namespace BackgroundVideoWinForms
             // 
             buttonStart.Location = new System.Drawing.Point(12, 249);
             buttonStart.Name = "buttonStart";
-            buttonStart.Size = new System.Drawing.Size(200, 30);
+            buttonStart.Size = new System.Drawing.Size(195, 30);
             buttonStart.TabIndex = 5;
             buttonStart.Text = "Search and Generate";
             buttonStart.UseVisualStyleBackColor = true;
             buttonStart.Click += buttonStart_Click;
             // 
+            // buttonCancel
+            // 
+            buttonCancel.Enabled = false;
+            buttonCancel.Location = new System.Drawing.Point(221, 249);
+            buttonCancel.Name = "buttonCancel";
+            buttonCancel.Size = new System.Drawing.Size(195, 30);
+            buttonCancel.TabIndex = 6;
+            buttonCancel.Text = "Cancel";
+            buttonCancel.UseVisualStyleBackColor = true;
+            buttonCancel.Click += buttonCancel_Click;
+            // 
             // progressBar
             // 
-            progressBar.Location = new System.Drawing.Point(218, 249);
+            progressBar.Location = new System.Drawing.Point(12, 285);
             progressBar.Name = "progressBar";
-            progressBar.Size = new System.Drawing.Size(200, 30);
-            progressBar.TabIndex = 6;
+            progressBar.Size = new System.Drawing.Size(404, 30);
+            progressBar.TabIndex = 7;
             // 
             // labelStatus
             // 
             labelStatus.AutoSize = true;
-            labelStatus.Location = new System.Drawing.Point(12, 285);
+            labelStatus.Location = new System.Drawing.Point(12, 320);
             labelStatus.Name = "labelStatus";
             labelStatus.Size = new System.Drawing.Size(0, 15);
-            labelStatus.TabIndex = 7;
+            labelStatus.TabIndex = 8;
             // 
             // labelApiKey
             // 
@@ -181,9 +193,10 @@ namespace BackgroundVideoWinForms
             // 
             AutoScaleDimensions = new System.Drawing.SizeF(7F, 15F);
             AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            ClientSize = new System.Drawing.Size(424, 327);
+            ClientSize = new System.Drawing.Size(424, 360);
             Controls.Add(labelStatus);
             Controls.Add(progressBar);
+            Controls.Add(buttonCancel);
             Controls.Add(buttonStart);
             Controls.Add(groupBoxResolution);
             Controls.Add(groupBoxAspectRatio);
@@ -217,6 +230,7 @@ namespace BackgroundVideoWinForms
         private System.Windows.Forms.RadioButton radioButtonHorizontal;
         private System.Windows.Forms.RadioButton radioButtonVertical;
         private System.Windows.Forms.Button buttonStart;
+        private System.Windows.Forms.Button buttonCancel;
         private System.Windows.Forms.ProgressBar progressBar;
         private System.Windows.Forms.Label labelStatus;
         private System.Windows.Forms.Label labelApiKey;

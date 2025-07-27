@@ -229,7 +229,7 @@ namespace BackgroundVideoWinForms
         }
 
         // Batch normalization for multiple files with parallel processing
-        public async Task NormalizeBatchAsync(string[] inputPaths, string[] outputPaths, int targetWidth, int targetHeight, int maxParallel = 2, Action<int, string> progressCallback = null)
+        public async Task NormalizeBatchAsync(string[] inputPaths, string[] outputPaths, int targetWidth, int targetHeight, int maxParallel = 2, Action<int, string> progressCallback = null, CancellationToken cancellationToken = default)
         {
             var semaphore = new SemaphoreSlim(maxParallel);
             var tasks = new List<Task>();
@@ -239,19 +239,23 @@ namespace BackgroundVideoWinForms
                 int index = i;
                 tasks.Add(Task.Run(async () =>
                 {
-                    await semaphore.WaitAsync();
+                    await semaphore.WaitAsync(cancellationToken);
                     try
                     {
+                        cancellationToken.ThrowIfCancellationRequested();
                         progressCallback?.Invoke(index, $"Starting normalization {index + 1} of {inputPaths.Length}");
                         await Task.Run(() => Normalize(inputPaths[index], outputPaths[index], targetWidth, targetHeight, 
-                            (progress) => progressCallback?.Invoke(index, progress)));
+                            (progress) => {
+                                cancellationToken.ThrowIfCancellationRequested();
+                                progressCallback?.Invoke(index, progress);
+                            }), cancellationToken);
                         progressCallback?.Invoke(index, $"Completed normalization {index + 1} of {inputPaths.Length}");
                     }
                     finally
                     {
                         semaphore.Release();
                     }
-                }));
+                }, cancellationToken));
             }
             
             await Task.WhenAll(tasks.ToArray());
