@@ -56,7 +56,9 @@ namespace BackgroundVideoWinForms
                             int duration = video.GetProperty("duration").GetInt32();
                             
                             // Allow longer videos when target duration is higher
-                            int maxDuration = Math.Max(60, targetDurationSeconds / 2); // Allow up to half the target duration
+                            // For longer targets, allow videos up to the full target duration
+                            // For shorter targets, allow videos up to 2x the target duration
+                            int maxDuration = targetDurationSeconds >= 120 ? targetDurationSeconds : Math.Max(60, targetDurationSeconds * 2);
                             if (duration < 3 || duration > maxDuration)
                             {
                                 Logger.LogDebug($"Skipping video with duration {duration}s (outside acceptable range 3-{maxDuration}s)");

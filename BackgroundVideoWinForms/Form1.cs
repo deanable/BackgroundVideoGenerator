@@ -731,16 +731,12 @@ namespace BackgroundVideoWinForms
                     radioButtonHorizontal.Checked = true;
                 }
                 
-                // Load window position and size
+                // Load window position only (no automatic sizing)
                 var (x, y, width, height) = RegistryHelper.LoadWindowPosition();
                 if (x >= 0 && y >= 0)
                 {
                     this.StartPosition = FormStartPosition.Manual;
                     this.Location = new System.Drawing.Point(x, y);
-                }
-                if (width > 0 && height > 0)
-                {
-                    this.Size = new System.Drawing.Size(width, height);
                 }
                 
                 Logger.Log("Settings loaded from registry successfully");
@@ -764,7 +760,7 @@ namespace BackgroundVideoWinForms
                 
                 RegistryHelper.SaveAllSettings(apiKey, searchTerm, duration, resolution, aspectRatio);
                 
-                // Save window position and size
+                // Save window position only (no automatic sizing)
                 RegistryHelper.SaveWindowPosition(this.Location.X, this.Location.Y, this.Width, this.Height);
                 
                 Logger.Log("Settings saved to registry successfully");
