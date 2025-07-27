@@ -529,11 +529,14 @@ namespace BackgroundVideoWinForms
         {
             totalDuration = duration;
             
-            // Calculate total frames based on duration and frame rate
-            totalFrames = (long)(duration * targetFrameRate);
+            // Use output frame rate (30fps) for total frame calculation, not input frame rate
+            // FFmpeg encodes output at 30fps regardless of input frame rates
+            int outputFrameRate = 30;
+            totalFrames = (long)(duration * outputFrameRate);
             
             Logger.LogInfo($"Set total duration for progress tracking: {duration:F2}s");
-            Logger.LogInfo($"Calculated total frames: {totalFrames:N0} (duration: {duration:F2}s × {targetFrameRate}fps)");
+            Logger.LogInfo($"Calculated total frames: {totalFrames:N0} (duration: {duration:F2}s × {outputFrameRate}fps output)");
+            Logger.LogInfo($"Note: Using output frame rate ({outputFrameRate}fps) for frame calculation, not input average ({targetFrameRate}fps)");
             
             // Validate frame calculation
             if (totalFrames <= 0)
@@ -542,8 +545,8 @@ namespace BackgroundVideoWinForms
                 // Fallback: use target duration from UI
                 int targetDurationMinutes = trackBarDuration.Value;
                 double targetDurationSeconds = targetDurationMinutes * 60.0;
-                totalFrames = (long)(targetDurationSeconds * targetFrameRate);
-                Logger.LogInfo($"Fallback total frames: {totalFrames:N0} (target: {targetDurationMinutes}min × 60s × {targetFrameRate}fps)");
+                totalFrames = (long)(targetDurationSeconds * outputFrameRate);
+                Logger.LogInfo($"Fallback total frames: {totalFrames:N0} (target: {targetDurationMinutes}min × 60s × {outputFrameRate}fps)");
             }
             
             // Validate duration
