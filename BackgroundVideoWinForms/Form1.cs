@@ -10,6 +10,7 @@ using System.Net.Http;
 using System.Text.Json;
 using Microsoft.Win32;
 using System.Linq; // Added for Average()
+using System.Globalization; // Added for NumberStyles
 
 namespace BackgroundVideoWinForms
 {
@@ -205,36 +206,10 @@ namespace BackgroundVideoWinForms
                 GC.Collect();
                 GC.WaitForPendingFinalizers();
                 
-                // Clean up downloaded and normalized files with retry mechanism
+                // Clean up downloaded and normalized files with improved retry mechanism
                 foreach (var file in downloadedFiles)
                 {
-                    try 
-                    { 
-                        if (File.Exists(file)) 
-                        {
-                            File.Delete(file);
-                            Logger.LogFileOperation("Deleted Temp File", Path.GetFileName(file));
-                        }
-                    } 
-                    catch (IOException ex) 
-                    { 
-                        Logger.LogWarning($"Failed to delete temp file {Path.GetFileName(file)}: {ex.Message}");
-                        // Try again after a short delay
-                        Thread.Sleep(100);
-                        try
-                        {
-                            File.Delete(file);
-                            Logger.LogFileOperation("Deleted Temp File (Retry)", Path.GetFileName(file));
-                        }
-                        catch (Exception retryEx)
-                        {
-                            Logger.LogWarning($"Failed to delete temp file {Path.GetFileName(file)} after retry: {retryEx.Message}");
-                        }
-                    }
-                    catch (Exception ex) 
-                    { 
-                        Logger.LogWarning($"Failed to delete temp file {Path.GetFileName(file)}: {ex.Message}");
-                    }
+                    DeleteFileWithRetry(file, "Temp File");
                 }
                 
                 // Clean up the entire temp directory
@@ -352,9 +327,14 @@ namespace BackgroundVideoWinForms
                 cancellationTokenSource = null;
             }
             
-            // Force garbage collection to free memory
+            // Force garbage collection to free memory and file handles
             GC.Collect();
             GC.WaitForPendingFinalizers();
+            GC.Collect(); // Second collection to ensure cleanup
+            
+            // Additional cleanup for any remaining file handles
+            CleanupRemainingFiles();
+            
             Logger.LogMemoryUsage();
         }
 
@@ -368,7 +348,8 @@ namespace BackgroundVideoWinForms
                 
                 // Parse FFmpeg progress line: frame=114037 fps=736 q=29.0 size=88576KiB time=01:03:21.16 bitrate=190.9kbits/s dup=529620 drop=0 speed=24.5x elapsed=0:02:34.83
                 var frameMatch = System.Text.RegularExpressions.Regex.Match(line, @"frame=(\d+)");
-                var timeMatch = System.Text.RegularExpressions.Regex.Match(line, @"time=(\d+):(\d+):(\d+\.\d+)");
+                // Improved time regex to handle various time formats including MM:SS.SS
+                var timeMatch = System.Text.RegularExpressions.Regex.Match(line, @"time=(\d+):(\d+):(\d+\.?\d*)");
                 var speedMatch = System.Text.RegularExpressions.Regex.Match(line, @"speed=(\d+\.?\d*)x");
                 
                 if (frameMatch.Success && timeMatch.Success)
@@ -376,7 +357,15 @@ namespace BackgroundVideoWinForms
                     currentFrame = long.Parse(frameMatch.Groups[1].Value);
                     int hours = int.Parse(timeMatch.Groups[1].Value);
                     int minutes = int.Parse(timeMatch.Groups[2].Value);
-                    double seconds = double.Parse(timeMatch.Groups[3].Value);
+                    
+                    // More robust seconds parsing to handle decimal seconds properly
+                    string secondsStr = timeMatch.Groups[3].Value;
+                    if (!double.TryParse(secondsStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double seconds))
+                    {
+                        Logger.LogDebug($"Failed to parse seconds from '{secondsStr}' in time string");
+                        return;
+                    }
+                    
                     currentTime = hours * 3600 + minutes * 60 + seconds;
                     
                     // Calculate progress percentage based on time if we have total duration
@@ -948,6 +937,143 @@ namespace BackgroundVideoWinForms
                 process.Start();
                 process.BeginErrorReadLine();
                 process.WaitForExit();
+            }
+        }
+
+        /// <summary>
+        /// Deletes a file with multiple retry attempts and better error handling
+        /// </summary>
+        private void DeleteFileWithRetry(string filePath, string fileType)
+        {
+            if (!File.Exists(filePath))
+                return;
+
+            const int maxRetries = 3;
+            const int retryDelayMs = 200;
+
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    File.Delete(filePath);
+                    Logger.LogFileOperation($"Deleted {fileType}", Path.GetFileName(filePath));
+                    return;
+                }
+                catch (IOException ex)
+                {
+                    if (attempt == maxRetries)
+                    {
+                        Logger.LogWarning($"Failed to delete {fileType} {Path.GetFileName(filePath)} after {maxRetries} attempts: {ex.Message}");
+                        // Schedule for cleanup later
+                        ScheduleFileForCleanup(filePath);
+                    }
+                    else
+                    {
+                        Logger.LogDebug($"Attempt {attempt} failed to delete {fileType} {Path.GetFileName(filePath)}: {ex.Message}");
+                        Thread.Sleep(retryDelayMs * attempt); // Exponential backoff
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning($"Failed to delete {fileType} {Path.GetFileName(filePath)}: {ex.Message}");
+                    return;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Schedules a file for cleanup on application exit
+        /// </summary>
+        private void ScheduleFileForCleanup(string filePath)
+        {
+            try
+            {
+                // Create a cleanup marker file
+                string cleanupMarker = filePath + ".cleanup";
+                File.WriteAllText(cleanupMarker, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+                Logger.LogDebug($"Scheduled {Path.GetFileName(filePath)} for cleanup on exit");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogDebug($"Failed to schedule cleanup for {Path.GetFileName(filePath)}: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Performs additional cleanup for any remaining files and handles
+        /// </summary>
+        private void CleanupRemainingFiles()
+        {
+            try
+            {
+                // Clean up any scheduled cleanup files
+                var cleanupMarkers = Directory.GetFiles(Path.GetTempPath(), "*.cleanup");
+                foreach (var marker in cleanupMarkers)
+                {
+                    try
+                    {
+                        string originalFile = marker.Replace(".cleanup", "");
+                        if (File.Exists(originalFile))
+                        {
+                            File.Delete(originalFile);
+                            Logger.LogDebug($"Cleaned up scheduled file: {Path.GetFileName(originalFile)}");
+                        }
+                        File.Delete(marker);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogDebug($"Failed to clean up scheduled file {marker}: {ex.Message}");
+                    }
+                }
+
+                // Additional cleanup for temp directory
+                string tempDir = Path.Combine(Path.GetTempPath(), "pexels_bgvid");
+                if (Directory.Exists(tempDir))
+                {
+                    try
+                    {
+                        // Try to delete any remaining files in the directory
+                        var remainingFiles = Directory.GetFiles(tempDir, "*", SearchOption.AllDirectories);
+                        foreach (var file in remainingFiles)
+                        {
+                            try
+                            {
+                                File.Delete(file);
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.LogDebug($"Failed to delete remaining file {Path.GetFileName(file)}: {ex.Message}");
+                            }
+                        }
+
+                        // Try to delete the directory itself
+                        Directory.Delete(tempDir, true);
+                        Logger.LogDebug("Cleaned up temp directory on exit");
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogDebug($"Failed to clean up temp directory: {ex.Message}");
+                    }
+                }
+
+                // Clean up any remaining concat files
+                var concatFiles = Directory.GetFiles(Path.GetTempPath(), "pexels_concat_*.txt");
+                foreach (var concatFile in concatFiles)
+                {
+                    try
+                    {
+                        File.Delete(concatFile);
+                        Logger.LogDebug($"Cleaned up concat file: {Path.GetFileName(concatFile)}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogDebug($"Failed to clean up concat file {Path.GetFileName(concatFile)}: {ex.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogDebug($"Error during additional cleanup: {ex.Message}");
             }
         }
     }
