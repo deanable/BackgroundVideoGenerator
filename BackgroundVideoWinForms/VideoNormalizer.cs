@@ -242,14 +242,27 @@ namespace BackgroundVideoWinForms
                     await semaphore.WaitAsync(cancellationToken);
                     try
                     {
-                        cancellationToken.ThrowIfCancellationRequested();
+                        if (cancellationToken.IsCancellationRequested)
+                        {
+                            Logger.LogInfo($"Normalization {index + 1} cancelled");
+                            return;
+                        }
+                        
                         progressCallback?.Invoke(index, $"Starting normalization {index + 1} of {inputPaths.Length}");
                         await Task.Run(() => Normalize(inputPaths[index], outputPaths[index], targetWidth, targetHeight, 
                             (progress) => {
-                                cancellationToken.ThrowIfCancellationRequested();
+                                if (cancellationToken.IsCancellationRequested)
+                                {
+                                    Logger.LogInfo($"Normalization {index + 1} progress cancelled");
+                                    return;
+                                }
                                 progressCallback?.Invoke(index, progress);
                             }), cancellationToken);
-                        progressCallback?.Invoke(index, $"Completed normalization {index + 1} of {inputPaths.Length}");
+                        
+                        if (!cancellationToken.IsCancellationRequested)
+                        {
+                            progressCallback?.Invoke(index, $"Completed normalization {index + 1} of {inputPaths.Length}");
+                        }
                     }
                     finally
                     {

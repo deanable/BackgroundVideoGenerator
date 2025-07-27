@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Linq;
+using System.Threading;
 
 namespace BackgroundVideoWinForms
 {
@@ -20,7 +21,7 @@ namespace BackgroundVideoWinForms
     {
         private const string PEXELS_API_URL = "https://api.pexels.com/videos/search";
 
-        public async Task<List<PexelsVideoClip>> SearchVideosAsync(string searchTerm, string apiKey, int targetDurationSeconds = 60, bool isVertical = false, int maxPages = 3)
+        public async Task<List<PexelsVideoClip>> SearchVideosAsync(string searchTerm, string apiKey, int targetDurationSeconds = 60, bool isVertical = false, int maxPages = 3, CancellationToken cancellationToken = default)
         {
             Logger.LogApiCall("Pexels Search", $"term={searchTerm}, targetDuration={targetDurationSeconds}s, aspectRatio={(isVertical ? "Vertical" : "Horizontal")}", true);
             var result = new List<PexelsVideoClip>();
@@ -33,15 +34,18 @@ namespace BackgroundVideoWinForms
                     // Search multiple pages to find enough videos with correct aspect ratio
                     for (int page = 1; page <= maxPages; page++)
                     {
+                        // Check for cancellation before each API call
+                        cancellationToken.ThrowIfCancellationRequested();
+                        
                         string url = $"{PEXELS_API_URL}?query={Uri.EscapeDataString(searchTerm)}&per_page=40&page={page}";
                         Logger.LogDebug($"GET {url} (page {page}/{maxPages})");
-                        var response = await client.GetAsync(url);
+                        var response = await client.GetAsync(url, cancellationToken);
                         if (!response.IsSuccessStatusCode)
                         {
                             Logger.LogError($"API call failed with status {response.StatusCode} on page {page}");
                             continue;
                         }
-                        var json = await response.Content.ReadAsStringAsync();
+                        var json = await response.Content.ReadAsStringAsync(cancellationToken);
                         using (JsonDocument doc = JsonDocument.Parse(json))
                         {
                             var videos = doc.RootElement.GetProperty("videos");
@@ -125,6 +129,11 @@ namespace BackgroundVideoWinForms
                         Logger.LogWarning($"Only found {result.Count} videos with {(isVertical ? "Vertical" : "Horizontal")} aspect ratio. Consider trying a different search term or aspect ratio.");
                     }
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                Logger.LogInfo("Pexels API search was cancelled by user");
+                throw; // Re-throw to propagate cancellation
             }
             catch (Exception ex)
             {

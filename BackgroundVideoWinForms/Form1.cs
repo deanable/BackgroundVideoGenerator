@@ -127,7 +127,7 @@ namespace BackgroundVideoWinForms
                 Logger.LogApiCall("Pexels Search", $"term={searchTerm}, duration={duration}s", true);
                 
                 bool isVertical = radioButtonVertical.Checked;
-                var clips = await pexelsService.SearchVideosAsync(searchTerm, apiKey, duration, isVertical);
+                var clips = await pexelsService.SearchVideosAsync(searchTerm, apiKey, duration, isVertical, cancellationToken: cancellationTokenSource.Token);
                 searchStopwatch.Stop();
                 Logger.LogPerformance("Pexels API Search", searchStopwatch.Elapsed, $"Found {clips?.Count ?? 0} clips");
                 
@@ -216,16 +216,26 @@ namespace BackgroundVideoWinForms
                     SetTotalDuration(duration); // Use the target duration from user input
                 }
                 
-                await Task.Run(() => videoConcatenator.Concatenate(downloadedFiles, outputFile, resolution, (progress) => {
-                    // Check for cancellation
-                    if (cancellationTokenSource?.Token.IsCancellationRequested == true)
-                    {
-                        throw new OperationCanceledException("Video concatenation was cancelled");
-                    }
-                    
-                    // Parse FFmpeg progress output
-                    ParseFFmpegProgress(progress);
-                }, cancellationTokenSource?.Token));
+                bool concatenationCancelled = false;
+                await Task.Run(() => {
+                    videoConcatenator.Concatenate(downloadedFiles, outputFile, resolution, (progress) => {
+                        // Check for cancellation
+                        if (cancellationTokenSource?.Token.IsCancellationRequested == true)
+                        {
+                            concatenationCancelled = true;
+                            return;
+                        }
+                        
+                        // Parse FFmpeg progress output
+                        ParseFFmpegProgress(progress);
+                    }, cancellationTokenSource?.Token);
+                });
+                
+                // Check if concatenation was cancelled
+                if (concatenationCancelled)
+                {
+                    cancellationTokenSource?.Token.ThrowIfCancellationRequested();
+                }
                 
                 // Set progress to 100% when concatenation is actually complete
                 this.BeginInvoke((Action)(() =>
@@ -330,6 +340,22 @@ namespace BackgroundVideoWinForms
                 }
                 catch (Exception ex) { Logger.LogException(ex, "Open output folder"); }
             }
+            catch (OperationCanceledException)
+            {
+                Logger.LogInfo("Video generation was cancelled by user");
+                
+                // Perform cleanup for cancelled operations
+                HandleCancellationCleanup();
+                
+                this.BeginInvoke((Action)(() =>
+                {
+                    progressBar.Style = ProgressBarStyle.Blocks;
+                    progressBar.Value = 0;
+                    labelStatus.Text = "Operation cancelled by user";
+                    buttonStart.Enabled = true;
+                    buttonCancel.Enabled = false;
+                }));
+            }
             catch (Exception ex)
             {
                 Logger.LogException(ex, "Video Generation Pipeline");
@@ -381,6 +407,48 @@ namespace BackgroundVideoWinForms
             CleanupRemainingFiles();
             
             Logger.LogMemoryUsage();
+        }
+
+        private void HandleCancellationCleanup()
+        {
+            Logger.LogInfo("Performing cancellation cleanup");
+            
+            // Clean up any temporary files that might have been created
+            string tempDir = Path.Combine(Path.GetTempPath(), "pexels_bgvid");
+            try 
+            {
+                if (Directory.Exists(tempDir))
+                {
+                    Directory.Delete(tempDir, true);
+                    Logger.LogInfo($"Cleaned up temp directory after cancellation: {tempDir}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning($"Failed to clean up temp directory after cancellation {tempDir}: {ex.Message}");
+            }
+            
+            // Clean up any remaining concat list files
+            try
+            {
+                var concatFiles = Directory.GetFiles(Path.GetTempPath(), "pexels_concat_*.txt");
+                foreach (var concatFile in concatFiles)
+                {
+                    try
+                    {
+                        File.Delete(concatFile);
+                        Logger.LogFileOperation("Cleaned up Concat File after cancellation", concatFile);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogWarning($"Failed to clean up concat file after cancellation {concatFile}: {ex.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning($"Failed to clean up concat files after cancellation: {ex.Message}");
+            }
         }
 
         private void ParseFFmpegProgress(string line)
@@ -957,7 +1025,11 @@ namespace BackgroundVideoWinForms
             for (int i = 0; i < clipsToProcess; i++)
             {
                 // Check for cancellation
-                cancellationToken.ThrowIfCancellationRequested();
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    Logger.LogInfo("Download phase cancelled by user");
+                    return downloadedFiles;
+                }
                 
                 var clip = selectedClips[i];
                 string fileName = Path.Combine(tempDir, $"clip_{i}.mp4");
@@ -970,7 +1042,7 @@ namespace BackgroundVideoWinForms
                 
                 Logger.LogProgress("Download", i + 1, clipsToProcess, $"Clip {i + 1}: {clip.Duration}s");
                 Logger.LogDebug($"Starting download {i + 1} of {clipsToProcess}: {clip.Url} (duration: {clip.Duration}s)");
-                await videoDownloader.DownloadAsync(clip, fileName);
+                await videoDownloader.DownloadAsync(clip, fileName, cancellationToken);
                 sw.Stop();
                 downloadTimes.Add(sw.Elapsed.TotalSeconds);
                 Logger.LogPerformance("Individual Download", sw.Elapsed, $"Clip {i + 1}: {Path.GetFileName(fileName)}");
@@ -1027,12 +1099,16 @@ namespace BackgroundVideoWinForms
                 labelStatus.Text = $"Normalizing 0 of {clipsToProcess} clips (using {maxParallel} parallel processes)...";
             }));
             
+            // Check for cancellation before starting normalization
+            if (cancellationToken.IsCancellationRequested)
+            {
+                Logger.LogInfo("Normalization phase cancelled by user");
+                return downloadedFiles;
+            }
+            
             // Run dimension probing on background thread
             await Task.Run(async () => {
                 Logger.LogInfo($"Normalization phase: Probing dimensions for {clipsToProcess} clips on background thread");
-                
-                // Check for cancellation
-                cancellationToken.ThrowIfCancellationRequested();
                 
                 // Prepare input and output paths for batch processing
                 var inputPaths = new string[clipsToProcess];
@@ -1065,9 +1141,6 @@ namespace BackgroundVideoWinForms
                 
                 if (clipsToNormalize > 0)
                 {
-                    // Check for cancellation
-                    cancellationToken.ThrowIfCancellationRequested();
-                    
                     // Use batch normalization for better performance on background thread
                     var normalizeInputs = inputPaths.Where((_, i) => needsNormalization[i]).ToArray();
                     var normalizeOutputs = outputPaths.Where((_, i) => needsNormalization[i]).ToArray();
@@ -1077,7 +1150,11 @@ namespace BackgroundVideoWinForms
                     await videoNormalizer.NormalizeBatchAsync(normalizeInputs, normalizeOutputs, targetWidth, targetHeight, maxParallel, 
                         (index, progress) => {
                             // Check for cancellation
-                            cancellationToken.ThrowIfCancellationRequested();
+                            if (cancellationToken.IsCancellationRequested)
+                            {
+                                Logger.LogInfo("Normalization progress cancelled by user");
+                                return;
+                            }
                             
                             // Find the actual clip index
                             int actualIndex = Array.FindIndex(needsNormalization, x => x) + index;

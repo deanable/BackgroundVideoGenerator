@@ -135,6 +135,7 @@ namespace BackgroundVideoWinForms
                                 {
                                     Logger.LogWarning($"Error killing FFmpeg process: {ex.Message}");
                                 }
+                                progressCallback?.Invoke("Cancelled");
                                 return;
                             }
                             
@@ -164,6 +165,7 @@ namespace BackgroundVideoWinForms
                             {
                                 Logger.LogWarning($"Error killing FFmpeg process: {ex.Message}");
                             }
+                            progressCallback?.Invoke("Cancelled");
                             return;
                         }
                         
