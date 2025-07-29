@@ -88,17 +88,32 @@ namespace BackgroundVideoWinForms
             
             // Improved FFmpeg command with better settings for playback compatibility
             // Added -avoid_negative_ts make_zero to handle timestamp issues
+            // Use more efficient settings when all clips have consistent format
             string ffmpegArgs = $"-y -f concat -safe 0 -i \"{tempListFile}\" -vf scale={resolution}:force_original_aspect_ratio=decrease,pad={resolution}:(ow-iw)/2:(oh-ih)/2 -c:v libx264 -preset fast -crf 23 -an -r 30 -pix_fmt yuv420p -movflags +faststart -max_muxing_queue_size 1024 -avoid_negative_ts make_zero \"{outputFile}\"";
+            
+            // Check if all files have the same format for potential optimization
+            bool allSameFormat = CheckConsistentFormat(validFiles);
+            if (allSameFormat)
+            {
+                Logger.LogInfo("All input files have consistent format - using optimized concatenation settings");
+                // Use more conservative settings for consistent format
+                ffmpegArgs = $"-y -f concat -safe 0 -i \"{tempListFile}\" -c:v libx264 -preset fast -crf 23 -an -r 30 -pix_fmt yuv420p -movflags +faststart -avoid_negative_ts make_zero \"{outputFile}\"";
+            }
+            else
+            {
+                Logger.LogInfo("Input files have mixed formats - using standard concatenation with scaling");
+            }
+            
             Logger.LogFfmpegCommand(ffmpegArgs, tempListFile, outputFile);
             
             try
             {
-                string ffmpegPath = @"C:\Program Files (x86)\ffmpeg-2025-07-23-git-829680f96a-full_build\bin\ffmpeg.exe";
+                string ffmpegPath = FFmpegPathManager.FFmpegPath;
                 
-                if (!File.Exists(ffmpegPath))
+                if (string.IsNullOrEmpty(ffmpegPath))
                 {
-                    Logger.LogError($"ffmpeg not found at {ffmpegPath}");
-                    progressCallback?.Invoke($"Error: FFmpeg not found at {ffmpegPath}");
+                    Logger.LogError("FFmpeg not found. Please configure FFmpeg paths in settings.");
+                    progressCallback?.Invoke("Error: FFmpeg not found. Please configure FFmpeg paths in settings.");
                     return;
                 }
                 
@@ -201,13 +216,40 @@ namespace BackgroundVideoWinForms
                     Logger.Log($"VideoConcatenator: Process completed at {endTime:HH:mm:ss.fff}");
                     Logger.Log($"VideoConcatenator: Actual processing time: {actualDuration:mm\\:ss\\.ff} ({actualDuration.TotalSeconds:F1} seconds)");
                     Logger.Log($"VideoConcatenator: Expected vs Actual - Expected: {totalDuration:F1}s, Actual: {actualDuration.TotalSeconds:F1}s");
+                    
+                    // Check if process exited normally
+                    if (process.ExitCode != 0)
+                    {
+                        Logger.LogError($"VideoConcatenator: FFmpeg process failed with exit code {process.ExitCode}");
+                        progressCallback?.Invoke($"Error: FFmpeg failed with exit code {process.ExitCode}");
+                        return;
+                    }
                 }
                 
                 if (File.Exists(outputFile))
                 {
                     var fileInfo = new FileInfo(outputFile);
                     Logger.Log($"VideoConcatenator: Output file {outputFile} ({fileInfo.Length} bytes)");
-                    progressCallback?.Invoke($"Complete: {fileInfo.Length / 1024 / 1024:F1}MB");
+                    
+                    // Validate the output file has reasonable size and duration
+                    if (fileInfo.Length < 1024 * 1024) // Less than 1MB
+                    {
+                        Logger.LogError($"VideoConcatenator: Output file is too small ({fileInfo.Length} bytes) - likely corrupted");
+                        progressCallback?.Invoke("Error: Output file is too small - likely corrupted");
+                        return;
+                    }
+                    
+                    // Check if the file has valid duration using ffprobe
+                    double outputDuration = GetDuration(outputFile);
+                    if (outputDuration <= 0)
+                    {
+                        Logger.LogError($"VideoConcatenator: Output file has invalid duration ({outputDuration}s) - likely corrupted");
+                        progressCallback?.Invoke("Error: Output file has invalid duration - likely corrupted");
+                        return;
+                    }
+                    
+                    Logger.LogInfo($"VideoConcatenator: Output file validated - Duration: {outputDuration:F1}s, Size: {fileInfo.Length / 1024 / 1024:F1}MB");
+                    progressCallback?.Invoke($"Complete: {fileInfo.Length / 1024 / 1024:F1}MB ({outputDuration:F1}s)");
                 }
                 else
                 {
@@ -228,22 +270,22 @@ namespace BackgroundVideoWinForms
 
         private int CalculateTimeoutMinutes(double totalDuration, int fileCount)
         {
-            // Base timeout: 5 minutes
-            int baseTimeout = 5;
+            // Base timeout: 10 minutes (increased from 5)
+            int baseTimeout = 10;
             
-            // Add time based on video duration (1 minute per 2 minutes of video)
-            int durationTimeout = (int)Math.Ceiling(totalDuration / 120.0);
+            // Add time based on video duration (2 minutes per 1 minute of video - more generous)
+            int durationTimeout = (int)Math.Ceiling(totalDuration / 60.0) * 2;
             
-            // Add time based on number of files (30 seconds per file)
-            int fileCountTimeout = (int)Math.Ceiling(fileCount * 0.5);
+            // Add time based on number of files (1 minute per file - more generous)
+            int fileCountTimeout = fileCount;
             
             // Add buffer for system load
-            int bufferTimeout = 2;
+            int bufferTimeout = 5;
             
             int totalTimeout = baseTimeout + durationTimeout + fileCountTimeout + bufferTimeout;
             
-            // Cap at reasonable maximum (30 minutes)
-            return Math.Min(totalTimeout, 30);
+            // Cap at reasonable maximum (60 minutes instead of 30)
+            return Math.Min(totalTimeout, 60);
         }
 
         private double GetDuration(string filePath)
@@ -264,11 +306,11 @@ namespace BackgroundVideoWinForms
                 
                 // Test ffprobe availability first
                 Logger.Log("GetDuration: Testing ffprobe availability...");
-                string ffprobePath = @"C:\Program Files (x86)\ffmpeg-2025-07-23-git-829680f96a-full_build\bin\ffprobe.exe";
+                string ffprobePath = FFmpegPathManager.FFprobePath;
                 
-                if (!File.Exists(ffprobePath))
+                if (string.IsNullOrEmpty(ffprobePath))
                 {
-                    Logger.Log($"GetDuration: ffprobe not found at {ffprobePath}");
+                    Logger.Log("GetDuration: ffprobe not found. Please configure FFmpeg paths in settings.");
                     return 0;
                 }
                 
@@ -387,6 +429,168 @@ namespace BackgroundVideoWinForms
                 Logger.LogException(ex, $"GetDuration: Error getting duration for {filePath}");
             }
             return 0;
+        }
+
+        private bool CheckConsistentFormat(List<string> files)
+        {
+            if (files.Count == 0) return false;
+
+            string firstFormat = null;
+            foreach (var file in files)
+            {
+                double duration = GetDuration(file);
+                if (duration <= 0)
+                {
+                    Logger.LogWarning($"Skipping file with invalid duration for format check: {Path.GetFileName(file)}");
+                    continue;
+                }
+
+                string currentFormat = GetFormat(file);
+                if (string.IsNullOrEmpty(currentFormat))
+                {
+                    Logger.LogWarning($"Could not determine format for file: {Path.GetFileName(file)}");
+                    continue;
+                }
+
+                if (firstFormat == null)
+                {
+                    firstFormat = currentFormat;
+                }
+                else if (firstFormat != currentFormat)
+                {
+                    Logger.LogWarning($"File {Path.GetFileName(file)} has a different format than the first file. Expected: {firstFormat}, Found: {currentFormat}");
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private string GetFormat(string filePath)
+        {
+            try
+            {
+                Logger.Log($"GetFormat: Attempting to get format for {filePath}");
+                
+                // Check if file exists
+                if (!File.Exists(filePath))
+                {
+                    Logger.Log($"GetFormat: File does not exist: {filePath}");
+                    return null;
+                }
+                
+                var fileInfo = new FileInfo(filePath);
+                Logger.Log($"GetFormat: File exists, size: {fileInfo.Length} bytes");
+                
+                // Test ffprobe availability first
+                Logger.Log("GetFormat: Testing ffprobe availability...");
+                string ffprobePath = FFmpegPathManager.FFprobePath;
+                
+                if (string.IsNullOrEmpty(ffprobePath))
+                {
+                    Logger.Log("GetFormat: ffprobe not found. Please configure FFmpeg paths in settings.");
+                    return null;
+                }
+                
+                var testPsi = new ProcessStartInfo
+                {
+                    FileName = ffprobePath,
+                    Arguments = "-version",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                
+                try
+                {
+                    using (var testProcess = Process.Start(testPsi))
+                    {
+                        string testOutput = testProcess.StandardOutput.ReadToEnd();
+                        testProcess.WaitForExit(3000);
+                        Logger.Log($"GetFormat: ffprobe test - exit code: {testProcess.ExitCode}, output length: {testOutput?.Length ?? 0}");
+                        if (testProcess.ExitCode != 0)
+                        {
+                            Logger.Log($"GetFormat: ffprobe not available or failed test");
+                            return null;
+                        }
+                    }
+                }
+                catch (Exception testEx)
+                {
+                    Logger.LogException(testEx, "GetFormat: ffprobe test failed");
+                    return null;
+                }
+                
+                var psi = new ProcessStartInfo
+                {
+                    FileName = ffprobePath,
+                    Arguments = $"-v error -show_entries format=format_name -of default=noprint_wrappers=1:nokey=1 \"{filePath}\"",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                
+                Logger.Log($"GetFormat: Running ffprobe with args: {psi.Arguments}");
+                
+                using (var process = Process.Start(psi))
+                {
+                    if (process == null)
+                    {
+                        Logger.Log("GetFormat: Failed to start ffprobe process");
+                        return null;
+                    }
+                    
+                    // Read all output and error
+                    string output = process.StandardOutput.ReadToEnd();
+                    string error = process.StandardError.ReadToEnd();
+                    
+                    Logger.Log($"GetFormat: Waiting for ffprobe to exit...");
+                    bool exited = process.WaitForExit(10000); // 10 second timeout
+                    
+                    Logger.Log($"GetFormat: ffprobe process - exited: {exited}, exit code: {process.ExitCode}");
+                    Logger.Log($"GetFormat: ffprobe output: '{output?.Trim()}'");
+                    Logger.Log($"GetFormat: ffprobe error: '{error?.Trim()}'");
+                    
+                    if (!exited)
+                    {
+                        Logger.Log("GetFormat: ffprobe process timed out");
+                        try { process.Kill(); } catch { }
+                        return null;
+                    }
+                    
+                    if (process.ExitCode != 0)
+                    {
+                        Logger.Log($"GetFormat: ffprobe failed with exit code {process.ExitCode}");
+                        return null;
+                    }
+                    
+                    if (string.IsNullOrWhiteSpace(output))
+                    {
+                        Logger.Log("GetFormat: ffprobe returned empty output");
+                        return null;
+                    }
+                    
+                    string trimmedOutput = output.Trim();
+                    Logger.Log($"GetFormat: Attempting to parse format from: '{trimmedOutput}'");
+                    
+                    if (trimmedOutput.Contains("format_name="))
+                    {
+                        var parts = trimmedOutput.Split('=');
+                        if (parts.Length > 1)
+                        {
+                            string format = parts[1].Trim();
+                            Logger.Log($"GetFormat: Successfully parsed format: {format}");
+                            return format;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogException(ex, $"GetFormat: Error getting format for {filePath}");
+            }
+            return null;
         }
     }
 } 

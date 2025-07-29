@@ -30,6 +30,7 @@ namespace BackgroundVideoWinForms
             labelStatus = new System.Windows.Forms.Label();
             labelApiKey = new System.Windows.Forms.Label();
             textBoxApiKey = new System.Windows.Forms.TextBox();
+            buttonSettings = new System.Windows.Forms.Button();
             ((System.ComponentModel.ISupportInitialize)trackBarDuration).BeginInit();
             groupBoxResolution.SuspendLayout();
             groupBoxAspectRatio.SuspendLayout();
@@ -189,6 +190,16 @@ namespace BackgroundVideoWinForms
             textBoxApiKey.Size = new System.Drawing.Size(311, 23);
             textBoxApiKey.TabIndex = 2;
             // 
+            // buttonSettings
+            // 
+            buttonSettings.Location = new System.Drawing.Point(340, 249);
+            buttonSettings.Name = "buttonSettings";
+            buttonSettings.Size = new System.Drawing.Size(75, 30);
+            buttonSettings.TabIndex = 9;
+            buttonSettings.Text = "Settings";
+            buttonSettings.UseVisualStyleBackColor = true;
+            buttonSettings.Click += buttonSettings_Click;
+            // 
             // Form1
             // 
             AutoScaleDimensions = new System.Drawing.SizeF(7F, 15F);
@@ -198,6 +209,7 @@ namespace BackgroundVideoWinForms
             Controls.Add(progressBar);
             Controls.Add(buttonCancel);
             Controls.Add(buttonStart);
+            Controls.Add(buttonSettings);
             Controls.Add(groupBoxResolution);
             Controls.Add(groupBoxAspectRatio);
             Controls.Add(trackBarDuration);
@@ -235,5 +247,6 @@ namespace BackgroundVideoWinForms
         private System.Windows.Forms.Label labelStatus;
         private System.Windows.Forms.Label labelApiKey;
         private System.Windows.Forms.TextBox textBoxApiKey;
+        private System.Windows.Forms.Button buttonSettings;
     }
 } 

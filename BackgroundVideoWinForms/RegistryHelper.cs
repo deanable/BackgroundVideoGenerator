@@ -16,6 +16,8 @@ namespace BackgroundVideoWinForms
         private const string REGISTRY_WINDOW_HEIGHT = "WindowHeight";
         private const string REGISTRY_WINDOW_X = "WindowX";
         private const string REGISTRY_WINDOW_Y = "WindowY";
+        private const string REGISTRY_FFMPEG_PATH = "FFmpegPath";
+        private const string REGISTRY_FFPROBE_PATH = "FFprobePath";
 
         // Default values
         private const string DEFAULT_SEARCH_TERM = "city";
@@ -101,6 +103,28 @@ namespace BackgroundVideoWinForms
             int width = LoadIntValue(REGISTRY_WINDOW_WIDTH, DEFAULT_WINDOW_WIDTH);
             int height = LoadIntValue(REGISTRY_WINDOW_HEIGHT, DEFAULT_WINDOW_HEIGHT);
             return (x, y, width, height);
+        }
+        #endregion
+
+        #region FFmpeg Paths
+        public static void SaveFFmpegPath(string ffmpegPath)
+        {
+            SaveStringValue(REGISTRY_FFMPEG_PATH, ffmpegPath);
+        }
+
+        public static string LoadFFmpegPath()
+        {
+            return LoadStringValue(REGISTRY_FFMPEG_PATH, string.Empty);
+        }
+
+        public static void SaveFFprobePath(string ffprobePath)
+        {
+            SaveStringValue(REGISTRY_FFPROBE_PATH, ffprobePath);
+        }
+
+        public static string LoadFFprobePath()
+        {
+            return LoadStringValue(REGISTRY_FFPROBE_PATH, string.Empty);
         }
         #endregion
 

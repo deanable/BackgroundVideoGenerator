@@ -39,6 +39,9 @@ namespace BackgroundVideoWinForms
             Logger.LogSystemInfo();
             Logger.LogMemoryUsage();
             
+            // Initialize FFmpeg paths
+            InitializeFFmpegPaths();
+            
             // Load all settings from registry
             LoadSettingsFromRegistry();
             
@@ -57,6 +60,24 @@ namespace BackgroundVideoWinForms
             Logger.LogPipelineStep("Application Initialization", "Form loaded and settings loaded from registry");
         }
 
+        private void InitializeFFmpegPaths()
+        {
+            // Load custom FFmpeg paths from registry if set
+            string customFFmpegPath = RegistryHelper.LoadFFmpegPath();
+            string customFFprobePath = RegistryHelper.LoadFFprobePath();
+            
+            if (!string.IsNullOrEmpty(customFFmpegPath))
+            {
+                FFmpegPathManager.SetCustomFFmpegPath(customFFmpegPath, customFFprobePath);
+            }
+            
+            // Validate FFmpeg installation
+            if (!FFmpegPathManager.ValidateFFmpegInstallation())
+            {
+                Logger.LogWarning("FFmpeg installation validation failed. Users may need to configure paths in settings.");
+            }
+        }
+
         private const string PEXELS_API_URL = "https://api.pexels.com/videos/search";
         private const string REGISTRY_PATH = @"Software\\BackgroundVideoWinForms";
         private const string REGISTRY_APIKEY = "PexelsApiKey";
@@ -66,6 +87,25 @@ namespace BackgroundVideoWinForms
             if (isProcessing)
             {
                 MessageBox.Show("Processing is already in progress. Please wait or cancel the current operation.");
+                return;
+            }
+
+            // Validate FFmpeg installation before starting
+            if (!FFmpegPathManager.ValidateFFmpegInstallation())
+            {
+                var result = MessageBox.Show(
+                    "FFmpeg is not properly configured. Would you like to open settings to configure FFmpeg paths?",
+                    "FFmpeg Configuration Required",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning);
+                
+                if (result == DialogResult.Yes)
+                {
+                    using (var settingsForm = new SettingsForm())
+                    {
+                        settingsForm.ShowDialog();
+                    }
+                }
                 return;
             }
 
@@ -394,6 +434,17 @@ namespace BackgroundVideoWinForms
             }
         }
 
+        private void buttonSettings_Click(object sender, EventArgs e)
+        {
+            using (var settingsForm = new SettingsForm())
+            {
+                if (settingsForm.ShowDialog() == DialogResult.OK)
+                {
+                    Logger.LogInfo("Settings updated successfully");
+                }
+            }
+        }
+
         private void ResetUI()
         {
             isProcessing = false;
@@ -589,11 +640,11 @@ namespace BackgroundVideoWinForms
         {
             try
             {
-                string ffprobePath = @"C:\Program Files (x86)\ffmpeg-2025-07-23-git-829680f96a-full_build\bin\ffprobe.exe";
+                string ffprobePath = FFmpegPathManager.FFprobePath;
                 
-                if (!File.Exists(ffprobePath))
+                if (string.IsNullOrEmpty(ffprobePath))
                 {
-                    Logger.LogError($"ffprobe not found at {ffprobePath}");
+                    Logger.LogError("ffprobe not found. Please configure FFmpeg paths in settings.");
                     return 0;
                 }
                 
@@ -638,11 +689,11 @@ namespace BackgroundVideoWinForms
         {
             try
             {
-                string ffprobePath = @"C:\Program Files (x86)\ffmpeg-2025-07-23-git-829680f96a-full_build\bin\ffprobe.exe";
+                string ffprobePath = FFmpegPathManager.FFprobePath;
                 
-                if (!File.Exists(ffprobePath))
+                if (string.IsNullOrEmpty(ffprobePath))
                 {
-                    Logger.LogError($"ffprobe not found at {ffprobePath}");
+                    Logger.LogError("ffprobe not found. Please configure FFmpeg paths in settings.");
                     return 30; // Return default frame rate
                 }
                 
@@ -858,7 +909,7 @@ namespace BackgroundVideoWinForms
             // Improved clip selection with randomization and better duration management
             var selectedClips = new List<PexelsVideoClip>();
             int accumulatedDuration = 0;
-            int maxClips = Math.Max(30, totalDuration / 10); // Dynamic max clips based on target duration
+            int maxClips = Math.Max(10, totalDuration / 15); // More conservative max clips based on target duration
             
             Logger.LogInfo($"Clip selection parameters - Max clips: {maxClips}, Target duration: {totalDuration}s");
             
@@ -866,10 +917,21 @@ namespace BackgroundVideoWinForms
             var shuffledClips = clips.OrderBy(x => Random.Shared.Next()).ToList();
             Logger.LogInfo($"Randomized {clips.Count} clips for selection");
             
-            foreach (var clip in shuffledClips)
+            // First pass: find clips with exact target resolution and frame rate
+            var exactMatchClips = shuffledClips.Where(c => 
+                c.Width == targetWidth && 
+                c.Height == targetHeight && 
+                c.FrameRate == 30).ToList();
+            
+            Logger.LogInfo($"Found {exactMatchClips.Count} clips with exact format match ({targetWidth}x{targetHeight}, 30fps)");
+            
+            // Use exact matches first if available
+            var clipsToSelect = exactMatchClips.Count >= 3 ? exactMatchClips : shuffledClips;
+            
+            foreach (var clip in clipsToSelect)
             {
-                // Skip clips that are too long (allow longer clips for longer targets)
-                int maxClipDuration = Math.Max(60, totalDuration / 4); // Allow up to 1/4 of target duration
+                // Skip clips that are too long (more conservative limit)
+                int maxClipDuration = Math.Min(60, totalDuration / 3); // Allow up to 1/3 of target duration, max 60s
                 if (clip.Duration > maxClipDuration)
                 {
                     Logger.LogDebug($"Skipping clip with duration {clip.Duration}s (too long, max: {maxClipDuration}s)");
@@ -889,24 +951,42 @@ namespace BackgroundVideoWinForms
                 if (accumulatedDuration >= totalDuration || selectedClips.Count >= maxClips)
                     break;
                     
-                // More precise duration control - allow exceeding by only 15% instead of 30%
-                // This will result in videos closer to the target duration
-                if (accumulatedDuration + clip.Duration <= totalDuration * 1.15)
+                // More strict duration control - allow exceeding by only 10% instead of 15%
+                // This will result in videos much closer to the target duration
+                if (accumulatedDuration + clip.Duration <= totalDuration * 1.10)
                 {
                     accumulatedDuration += clip.Duration;
                     selectedClips.Add(clip);
-                    Logger.LogDebug($"Selected clip: {clip.Duration}s, {clip.Width}x{clip.Height} ({(isClipVertical ? "Vertical" : "Horizontal")}) (total: {accumulatedDuration}s)");
+                    Logger.LogDebug($"Selected clip: {clip.Duration}s, {clip.Width}x{clip.Height} ({(isClipVertical ? "Vertical" : "Horizontal")}) @ {clip.FrameRate}fps (total: {accumulatedDuration}s)");
                 }
                 else
                 {
-                    Logger.LogDebug($"Skipping clip {clip.Duration}s - would exceed target duration limit (current: {accumulatedDuration}s, limit: {totalDuration * 1.15:F1}s)");
+                    Logger.LogDebug($"Skipping clip {clip.Duration}s - would exceed target duration limit (current: {accumulatedDuration}s, limit: {totalDuration * 1.10:F1}s)");
                 }
             }
             
             Logger.LogInfo($"Selected {selectedClips.Count} clips with total duration {accumulatedDuration}s (target: {totalDuration}s)");
             
-            // If we have too few clips or duration is too short, try to add more clips
-            if (selectedClips.Count < 3 || accumulatedDuration < totalDuration * 0.8)
+            // Log format consistency information
+            if (selectedClips.Count > 0)
+            {
+                var resolutions = selectedClips.Select(c => $"{c.Width}x{c.Height}").Distinct().ToList();
+                var frameRates = selectedClips.Select(c => c.FrameRate).Distinct().ToList();
+                Logger.LogInfo($"Selected clips have {resolutions.Count} different resolutions: {string.Join(", ", resolutions)}");
+                Logger.LogInfo($"Selected clips have {frameRates.Count} different frame rates: {string.Join(", ", frameRates)}");
+                
+                if (resolutions.Count == 1 && frameRates.Count == 1)
+                {
+                    Logger.LogInfo("Excellent! All selected clips have consistent format - this will reduce processing errors");
+                }
+                else
+                {
+                    Logger.LogWarning("Selected clips have mixed formats - this may cause processing issues");
+                }
+            }
+            
+            // Only add more clips if we're significantly under the target (less than 80%)
+            if (selectedClips.Count < 2 || accumulatedDuration < totalDuration * 0.8)
             {
                 Logger.LogInfo($"Duration too short ({accumulatedDuration}s) or too few clips ({selectedClips.Count}), attempting to add more clips");
                 
@@ -918,7 +998,7 @@ namespace BackgroundVideoWinForms
                         continue;
                         
                     // Skip clips that are too long
-                    int maxClipDuration = Math.Max(30, totalDuration / 6); // Allow shorter clips
+                    int maxClipDuration = Math.Min(30, totalDuration / 4); // More conservative limit for additional clips
                     if (clip.Duration > maxClipDuration)
                         continue;
                         
@@ -928,14 +1008,14 @@ namespace BackgroundVideoWinForms
                     if (isClipVertical != isTargetVertical)
                         continue;
                         
-                    // Add clip if it gets us closer to target without exceeding too much
-                    if (accumulatedDuration + clip.Duration <= totalDuration * 1.2)
+                    // Add clip if it gets us closer to target without exceeding too much (max 15% over target)
+                    if (accumulatedDuration + clip.Duration <= totalDuration * 1.15)
                     {
                         accumulatedDuration += clip.Duration;
                         selectedClips.Add(clip);
-                        Logger.LogDebug($"Added additional clip: {clip.Duration}s (total: {accumulatedDuration}s)");
+                        Logger.LogDebug($"Added additional clip: {clip.Duration}s @ {clip.FrameRate}fps (total: {accumulatedDuration}s)");
                         
-                        // Stop if we have enough duration
+                        // Stop if we have enough duration (90% of target is sufficient)
                         if (accumulatedDuration >= totalDuration * 0.9)
                             break;
                     }

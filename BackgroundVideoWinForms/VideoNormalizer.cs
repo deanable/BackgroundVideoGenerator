@@ -14,11 +14,11 @@ namespace BackgroundVideoWinForms
             Logger.LogDebug($"Probing dimensions for {Path.GetFileName(filePath)}");
             try
             {
-                string ffprobePath = @"C:\Program Files (x86)\ffmpeg-2025-07-23-git-829680f96a-full_build\bin\ffprobe.exe";
+                string ffprobePath = FFmpegPathManager.FFprobePath;
                 
-                if (!File.Exists(ffprobePath))
+                if (string.IsNullOrEmpty(ffprobePath))
                 {
-                    Logger.LogError($"ffprobe not found at {ffprobePath}");
+                    Logger.LogError("ffprobe not found. Please configure FFmpeg paths in settings.");
                     return (0, 0);
                 }
                 
@@ -60,31 +60,32 @@ namespace BackgroundVideoWinForms
             // Try hardware acceleration first, fallback to software if it fails
             bool useHardwareAccel = CheckHardwareAcceleration();
             
-            // Optimized FFmpeg arguments for speed
+            // Optimized FFmpeg arguments for consistent output format
+            // Force 30fps, specific codec settings, and exact resolution
             string ffmpegArgs;
             if (useHardwareAccel)
             {
-                // Use hardware acceleration for faster processing
-                ffmpegArgs = $"-y -hwaccel auto -i \"{inputPath}\" -vf scale=w={targetWidth}:h={targetHeight}:force_original_aspect_ratio=decrease,pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2 -c:v h264_nvenc -preset p7 -rc vbr -cq 26 -b:v 5M -maxrate 10M -bufsize 10M -an \"{outputPath}\"";
-                Logger.LogInfo($"Using hardware acceleration for {Path.GetFileName(inputPath)}");
+                // Use hardware acceleration for faster processing with consistent format
+                ffmpegArgs = $"-y -hwaccel auto -i \"{inputPath}\" -vf scale=w={targetWidth}:h={targetHeight}:force_original_aspect_ratio=decrease,pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2,fps=30 -c:v h264_nvenc -preset p7 -rc vbr -cq 26 -b:v 5M -maxrate 10M -bufsize 10M -r 30 -pix_fmt yuv420p -an \"{outputPath}\"";
+                Logger.LogInfo($"Using hardware acceleration for {Path.GetFileName(inputPath)} with consistent format (30fps, {targetWidth}x{targetHeight})");
             }
             else
             {
-                // Optimized software encoding settings
-                ffmpegArgs = $"-y -i \"{inputPath}\" -vf scale=w={targetWidth}:h={targetHeight}:force_original_aspect_ratio=decrease,pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2 -c:v libx264 -preset ultrafast -crf 28 -tune fastdecode -an \"{outputPath}\"";
-                Logger.LogInfo($"Using software encoding for {Path.GetFileName(inputPath)}");
+                // Optimized software encoding settings with consistent format
+                ffmpegArgs = $"-y -i \"{inputPath}\" -vf scale=w={targetWidth}:h={targetHeight}:force_original_aspect_ratio=decrease,pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2,fps=30 -c:v libx264 -preset ultrafast -crf 28 -tune fastdecode -r 30 -pix_fmt yuv420p -an \"{outputPath}\"";
+                Logger.LogInfo($"Using software encoding for {Path.GetFileName(inputPath)} with consistent format (30fps, {targetWidth}x{targetHeight})");
             }
             
             Logger.LogFfmpegCommand(ffmpegArgs, inputPath, outputPath);
             
             try
             {
-                string ffmpegPath = @"C:\Program Files (x86)\ffmpeg-2025-07-23-git-829680f96a-full_build\bin\ffmpeg.exe";
+                string ffmpegPath = FFmpegPathManager.FFmpegPath;
                 
-                if (!File.Exists(ffmpegPath))
+                if (string.IsNullOrEmpty(ffmpegPath))
                 {
-                    Logger.LogError($"ffmpeg not found at {ffmpegPath}");
-                    throw new Exception($"FFmpeg not found at {ffmpegPath}");
+                    Logger.LogError("FFmpeg not found. Please configure FFmpeg paths in settings.");
+                    throw new Exception("FFmpeg not found. Please configure FFmpeg paths in settings.");
                 }
                 
                 var psi = new ProcessStartInfo
@@ -120,7 +121,7 @@ namespace BackgroundVideoWinForms
                         {
                             Logger.Log($"VideoNormalizer: Hardware acceleration failed, trying software encoding for {inputPath}");
                             useHardwareAccel = false;
-                            ffmpegArgs = $"-y -i \"{inputPath}\" -vf scale=w={targetWidth}:h={targetHeight}:force_original_aspect_ratio=decrease,pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2 -c:v libx264 -preset ultrafast -crf 28 -tune fastdecode -an \"{outputPath}\"";
+                            ffmpegArgs = $"-y -i \"{inputPath}\" -vf scale=w={targetWidth}:h={targetHeight}:force_original_aspect_ratio=decrease,pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2,fps=30 -c:v libx264 -preset ultrafast -crf 28 -tune fastdecode -r 30 -pix_fmt yuv420p -an \"{outputPath}\"";
                             
                             // Try again with software encoding
                             psi.Arguments = ffmpegArgs;
@@ -167,11 +168,11 @@ namespace BackgroundVideoWinForms
         {
             try
             {
-                string ffmpegPath = @"C:\Program Files (x86)\ffmpeg-2025-07-23-git-829680f96a-full_build\bin\ffmpeg.exe";
+                string ffmpegPath = FFmpegPathManager.FFmpegPath;
                 
-                if (!File.Exists(ffmpegPath))
+                if (string.IsNullOrEmpty(ffmpegPath))
                 {
-                    Logger.Log($"VideoNormalizer: ffmpeg not found at {ffmpegPath}");
+                    Logger.Log("VideoNormalizer: FFmpeg not found. Please configure FFmpeg paths in settings.");
                     return false;
                 }
                 
