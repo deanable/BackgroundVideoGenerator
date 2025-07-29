@@ -273,8 +273,9 @@ namespace BackgroundVideoWinForms
                 }
                 
                 bool concatenationCancelled = false;
+                bool concatenationSuccess = false;
                 await Task.Run(() => {
-                    videoConcatenator.Concatenate(downloadedFiles, outputFile, resolution, (progress) => {
+                    concatenationSuccess = videoConcatenator.ConcatenateVideos(downloadedFiles, outputFile, targetWidth, targetHeight, (progress) => {
                         // Check for cancellation
                         if (cancellationTokenSource?.Token.IsCancellationRequested == true)
                         {
@@ -284,13 +285,18 @@ namespace BackgroundVideoWinForms
                         
                         // Parse FFmpeg progress output
                         ParseFFmpegProgress(progress);
-                    }, cancellationTokenSource?.Token);
+                    });
                 });
                 
-                // Check if concatenation was cancelled
+                // Check if concatenation was cancelled or failed
                 if (concatenationCancelled)
                 {
                     cancellationTokenSource?.Token.ThrowIfCancellationRequested();
+                }
+                
+                if (!concatenationSuccess)
+                {
+                    throw new Exception("Video concatenation failed");
                 }
                 
                 // Set progress to 100% when concatenation is actually complete
