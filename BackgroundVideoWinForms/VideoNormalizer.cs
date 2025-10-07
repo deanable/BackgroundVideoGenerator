@@ -55,6 +55,14 @@ namespace BackgroundVideoWinForms
 
         public void Normalize(string inputPath, string outputPath, int targetWidth, int targetHeight, Action<string> progressCallback = null)
         {
+            var (width, height) = ProbeDimensions(inputPath);
+            if (width == targetWidth && height == targetHeight)
+            {
+                Logger.LogInfo($"Video {Path.GetFileName(inputPath)} is already at the target resolution. Skipping normalization.");
+                File.Copy(inputPath, outputPath, true);
+                return;
+            }
+
             Logger.LogPipelineStep("Video Normalization", $"Normalizing {Path.GetFileName(inputPath)} to {targetWidth}x{targetHeight}");
             
             // Try hardware acceleration first, fallback to software if it fails
@@ -66,13 +74,13 @@ namespace BackgroundVideoWinForms
             if (useHardwareAccel)
             {
                 // Use hardware acceleration for faster processing with consistent format
-                ffmpegArgs = $"-y -hwaccel auto -i \"{inputPath}\" -vf scale=w={targetWidth}:h={targetHeight}:force_original_aspect_ratio=decrease,pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2,fps=30 -c:v h264_nvenc -preset p7 -rc vbr -cq 26 -b:v 5M -maxrate 10M -bufsize 10M -r 30 -pix_fmt yuv420p -an \"{outputPath}\"";
+                ffmpegArgs = $"-y -hwaccel auto -i \"{inputPath}\" -vf scale=w={targetWidth}:h={targetHeight}:force_original_aspect_ratio=decrease,pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2,fps=30 -c:v h264_nvenc -preset p7 -rc vbr -cq 26 -b:v 5M -maxrate 10M -bufsize 10M -r 30 -pix_fmt yuv420p -an \"{outputPath}\"" ;
                 Logger.LogInfo($"Using hardware acceleration for {Path.GetFileName(inputPath)} with consistent format (30fps, {targetWidth}x{targetHeight})");
             }
             else
             {
                 // Optimized software encoding settings with consistent format
-                ffmpegArgs = $"-y -i \"{inputPath}\" -vf scale=w={targetWidth}:h={targetHeight}:force_original_aspect_ratio=decrease,pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2,fps=30 -c:v libx264 -preset ultrafast -crf 28 -tune fastdecode -r 30 -pix_fmt yuv420p -an \"{outputPath}\"";
+                ffmpegArgs = $"-y -i \"{inputPath}\" -vf scale=w={targetWidth}:h={targetHeight}:force_original_aspect_ratio=decrease,pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2,fps=30 -c:v libx264 -preset ultrafast -crf 28 -tune fastdecode -r 30 -pix_fmt yuv420p -an \"{outputPath}\"" ;
                 Logger.LogInfo($"Using software encoding for {Path.GetFileName(inputPath)} with consistent format (30fps, {targetWidth}x{targetHeight})");
             }
             
@@ -121,7 +129,7 @@ namespace BackgroundVideoWinForms
                         {
                             Logger.Log($"VideoNormalizer: Hardware acceleration failed, trying software encoding for {inputPath}");
                             useHardwareAccel = false;
-                            ffmpegArgs = $"-y -i \"{inputPath}\" -vf scale=w={targetWidth}:h={targetHeight}:force_original_aspect_ratio=decrease,pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2,fps=30 -c:v libx264 -preset ultrafast -crf 28 -tune fastdecode -r 30 -pix_fmt yuv420p -an \"{outputPath}\"";
+                            ffmpegArgs = $"-y -i \"{inputPath}\" -vf scale=w={targetWidth}:h={targetHeight}:force_original_aspect_ratio=decrease,pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2,fps=30 -c:v libx264 -preset ultrafast -crf 28 -tune fastdecode -r 30 -pix_fmt yuv420p -an \"{outputPath}\"" ;
                             
                             // Try again with software encoding
                             psi.Arguments = ffmpegArgs;
@@ -152,7 +160,7 @@ namespace BackgroundVideoWinForms
                 var endTime = DateTime.Now;
                 var actualDuration = endTime - startTime;
                 Logger.Log($"VideoNormalizer: Completed normalization of {Path.GetFileName(inputPath)} at {endTime:HH:mm:ss.fff}");
-                Logger.Log($"VideoNormalizer: Normalization time: {actualDuration:mm\\:ss\\.ff} ({actualDuration.TotalSeconds:F1} seconds)");
+                Logger.Log($"VideoNormalizer: Normalization time: {actualDuration:mm\:ss\.ff} ({actualDuration.TotalSeconds:F1} seconds)");
                 
                 var fileInfo = new FileInfo(outputPath);
                 Logger.Log($"VideoNormalizer: Normalized {outputPath} ({fileInfo.Length} bytes)");
@@ -208,7 +216,7 @@ namespace BackgroundVideoWinForms
                     if (line != null && line.Contains("time="))
                     {
                         // Extract time information from FFmpeg output
-                        var timeMatch = System.Text.RegularExpressions.Regex.Match(line, @"time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})");
+                        var timeMatch = System.Text.RegularExpressions.Regex.Match(line, @"time=(\d{{2}}):(\d{{2}}):(\d{{2}})\.(\d{{2}})");
                         if (timeMatch.Success)
                         {
                             int hours = int.Parse(timeMatch.Groups[1].Value);
@@ -281,4 +289,4 @@ namespace BackgroundVideoWinForms
             NormalizeBatchAsync(inputPaths, outputPaths, targetWidth, targetHeight, maxParallel, progressCallback).Wait();
         }
     }
-} 
+}
