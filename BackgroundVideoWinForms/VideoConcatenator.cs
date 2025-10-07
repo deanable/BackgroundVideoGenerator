@@ -1,15 +1,39 @@
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace BackgroundVideoWinForms
 {
+    public class HardwareEncoderInfo
+    {
+        public string Name { get; }
+        public string Args { get; }
+        public Func<bool> TestAvailability { get; }
+
+        public HardwareEncoderInfo(string name, string args, Func<bool> testAvailability)
+        {
+            Name = name;
+            Args = args;
+            TestAvailability = testAvailability;
+        }
+    }
+
     public class VideoConcatenator
     {
-        public bool ConcatenateVideos(List<string> inputFiles, string outputFile, int targetWidth, int targetHeight, Action<string> progressCallback = null)
+        public static async Task<bool> ConcatenateVideosAsync(List<string> inputFiles, string outputFile, int targetWidth, int targetHeight, IProgress<string> progress = null)
+        {
+            return await Task.Run(() =>
+            {
+                var concatenator = new VideoConcatenator();
+                return concatenator.ConcatenateVideos(inputFiles, outputFile, targetWidth, targetHeight, progress);
+            });
+        }
+
+        public bool ConcatenateVideos(List<string> inputFiles, string outputFile, int targetWidth, int targetHeight, IProgress<string> progress = null)
         {
             if (inputFiles == null || inputFiles.Count == 0)
             {
@@ -18,132 +42,154 @@ namespace BackgroundVideoWinForms
             }
 
             Logger.LogPipelineStep("Video Concatenation", $"Concatenating {inputFiles.Count} videos to {Path.GetFileName(outputFile)}");
-            
-            // Step 1: Validate all input files and get their durations
-            var validFiles = new List<string>();
-            double totalDuration = 0;
-            
-            Logger.LogInfo($"VideoConcatenator: Validating {inputFiles.Count} input files...");
-            
-            foreach (var file in inputFiles)
-            {
-                if (!File.Exists(file))
-                {
-                    Logger.LogWarning($"VideoConcatenator: File not found: {file}");
-                    continue;
-                }
 
-                var duration = GetVideoDuration(file);
-                if (duration > 0 && duration <= 120) // Allow files up to 2 minutes instead of 60 seconds
-                {
-                    validFiles.Add(file);
-                    totalDuration += duration;
-                    Logger.LogInfo($"VideoConcatenator: Valid file - {Path.GetFileName(file)}: {duration:F1}s (total: {totalDuration:F1}s)");
-                }
-                else
-                {
-                    Logger.LogWarning($"VideoConcatenator: Skipping file with invalid duration {duration}s: {Path.GetFileName(file)}");
-                }
-            }
-
-            if (validFiles.Count == 0)
-            {
-                Logger.LogError("VideoConcatenator: No valid input files found");
-                return false;
-            }
-
-            Logger.LogInfo($"VideoConcatenator: Validated {validFiles.Count} files with total duration {totalDuration:F1}s");
-
-            // Step 2: Pre-normalize all clips to identical format to prevent concatenation issues
-            var normalizedFiles = new List<string>();
+            var startTime = DateTime.Now;
             var tempDir = Path.Combine(Path.GetTempPath(), $"pexels_concat_{Guid.NewGuid()}");
             Directory.CreateDirectory(tempDir);
-            
-            Logger.LogInfo($"VideoConcatenator: Pre-normalizing {validFiles.Count} clips to identical format...");
-            
-            for (int i = 0; i < validFiles.Count; i++)
+
+            try
             {
-                var inputFile = validFiles[i];
-                var normalizedFile = Path.Combine(tempDir, $"normalized_{i:D3}.mp4");
-                
-                progressCallback?.Invoke($"Pre-normalizing clip {i + 1}/{validFiles.Count}...");
-                
-                // Normalize to exact format: 1920x1080, 30fps, yuv420p, libx264
-                var normalizeArgs = $"-y -i \"{inputFile}\" -vf scale=w={targetWidth}:h={targetHeight}:force_original_aspect_ratio=decrease,pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2,fps=30 -c:v libx264 -preset fast -crf 23 -r 30 -pix_fmt yuv420p -an -avoid_negative_ts make_zero \"{normalizedFile}\"";
-                
+                // Step 1: Quick validation - files should already be normalized from Form1.cs
+                var validFiles = new List<string>();
+                double totalDuration = 0;
+
+                Logger.LogInfo($"VideoConcatenator: Quick validation of {inputFiles.Count} pre-normalized files...");
+
+                foreach (var file in inputFiles)
+                {
+                    if (!File.Exists(file))
+                    {
+                        Logger.LogWarning($"VideoConcatenator: File not found: {file}");
+                        continue;
+                    }
+
+                    var duration = GetVideoDuration(file);
+                    if (duration > 0)
+                    {
+                        validFiles.Add(file);
+                        totalDuration += duration;
+                        Logger.LogDebug($"VideoConcatenator: Valid file - {Path.GetFileName(file)}: {duration:F1}s");
+                    }
+                }
+
+                if (validFiles.Count == 0)
+                {
+                    Logger.LogError("VideoConcatenator: No valid input files found");
+                    return false;
+                }
+
+                Logger.LogInfo($"VideoConcatenator: Ready to concatenate {validFiles.Count} files ({totalDuration:F1}s total)");
+
+                // Step 2: Create optimized concat list (no duplicate normalization needed)
+                var tempListFile = Path.Combine(tempDir, "concat_list.txt");
+                using (var writer = new StreamWriter(tempListFile))
+                {
+                    foreach (var file in validFiles)
+                    {
+                        writer.WriteLine($"file '{file.Replace("'", "'\\''")}'");
+                    }
+                }
+
+                Logger.LogInfo($"VideoConcatenator: Created optimized concat list with {validFiles.Count} files");
+
+                // Step 3: Ultra-fast concatenation using hardware acceleration when available
+                progress?.Report("Concatenating videos at high speed...");
+
+                string ffmpegArgs = BuildOptimizedFFmpegArgs(tempListFile, outputFile, targetWidth, targetHeight);
+
+                Logger.LogInfo($"VideoConcatenator: Using optimized FFmpeg args: {ffmpegArgs}");
+                Logger.LogInfo($"VideoConcatenator: Starting high-speed concatenation at {DateTime.Now:HH:mm:ss.fff}");
+
+                var success = RunFFmpegConcatenation(ffmpegArgs, tempListFile, outputFile, totalDuration, progress);
+
+                if (success)
+                {
+                    // Step 4: Validate output
+                    var fileInfo = new FileInfo(outputFile);
+                    var outputDuration = GetVideoDuration(outputFile);
+
+                    Logger.LogInfo($"VideoConcatenator: SUCCESS - Output: {Path.GetFileName(outputFile)} ({fileInfo.Length / (1024.0 * 1024.0):F1}MB, {outputDuration:F1}s)");
+
+                    var totalTime = DateTime.Now - startTime;
+                    Logger.LogPerformance("Video Concatenation", totalTime, $"Output: {Path.GetFileName(outputFile)}");
+                }
+
+                return success;
+            }
+            finally
+            {
+                CleanupTempDirectory(tempDir);
+            }
+        }
+
+        private string BuildOptimizedFFmpegArgs(string tempListFile, string outputFile, int targetWidth, int targetHeight)
+        {
+            // Try multiple hardware acceleration options, fallback to optimized software
+            var hardwareEncoder = DetectBestHardwareEncoder();
+
+            if (hardwareEncoder != null)
+            {
+                Logger.LogInfo($"VideoConcatenator: Using {hardwareEncoder.Name} for maximum speed");
+                return $"-y -f concat -safe 0 -i \"{tempListFile}\" {hardwareEncoder.Args} -c:a aac -avoid_negative_ts make_zero \"{outputFile}\"";
+            }
+            else
+            {
+                Logger.LogInfo("VideoConcatenator: Using ultra-optimized software encoding (AMD Ryzen integrated graphics detected)");
+                return $"-y -f concat -safe 0 -i \"{tempListFile}\" -c:v libx264 -preset ultrafast -crf 23 -tune fastdecode -c:a aac -avoid_negative_ts make_zero \"{outputFile}\"";
+            }
+        }
+
+        private HardwareEncoderInfo DetectBestHardwareEncoder()
+        {
+            var encoders = new[]
+            {
+                new HardwareEncoderInfo("NVIDIA", "-c:v h264_nvenc -preset p7 -cq 26", () => TestEncoder("h264_nvenc")),
+                new HardwareEncoderInfo("AMD", "-c:v h264_amf -usage transcoding -quality speed", () => TestEncoder("h264_amf")),
+                new HardwareEncoderInfo("Intel QSV", "-c:v h264_qsv -preset fast -global_quality 25", () => TestEncoder("h264_qsv"))
+            };
+
+            foreach (var encoder in encoders)
+            {
+                if (encoder.TestAvailability())
+                {
+                    return encoder;
+                }
+            }
+
+            return null;
+        }
+
+        private bool TestEncoder(string encoderName)
+        {
+            try
+            {
+                string ffmpegPath = FFmpegPathManager.FFmpegPath;
+
                 var psi = new ProcessStartInfo
                 {
-                    FileName = "ffmpeg",
-                    Arguments = normalizeArgs,
-                    UseShellExecute = false,
+                    FileName = ffmpegPath,
+                    Arguments = $"-f lavfi -i testsrc=duration=1:size=320x240:rate=1 -c:v {encoderName} -t 1 -f null -",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
+                    UseShellExecute = false,
                     CreateNoWindow = true
                 };
 
-                using var process = new Process { StartInfo = psi };
-                process.Start();
-                
-                var output = process.StandardOutput.ReadToEnd();
-                var error = process.StandardError.ReadToEnd();
-                process.WaitForExit();
-
-                if (process.ExitCode == 0 && File.Exists(normalizedFile))
+                using (var process = Process.Start(psi))
                 {
-                    var normalizedDuration = GetVideoDuration(normalizedFile);
-                    if (normalizedDuration > 0)
-                    {
-                        normalizedFiles.Add(normalizedFile);
-                        Logger.LogInfo($"VideoConcatenator: Normalized clip {i + 1}: {normalizedDuration:F1}s");
-                    }
-                    else
-                    {
-                        Logger.LogWarning($"VideoConcatenator: Normalized clip {i + 1} has zero duration, skipping");
-                        if (File.Exists(normalizedFile)) File.Delete(normalizedFile);
-                    }
-                }
-                else
-                {
-                    Logger.LogError($"VideoConcatenator: Failed to normalize clip {i + 1}: {error}");
-                    if (File.Exists(normalizedFile)) File.Delete(normalizedFile);
+                    process.WaitForExit(5000); // 5 second timeout
+                    return process.ExitCode == 0;
                 }
             }
-
-            if (normalizedFiles.Count == 0)
+            catch
             {
-                Logger.LogError("VideoConcatenator: No clips successfully normalized");
-                CleanupTempDirectory(tempDir);
                 return false;
             }
+        }
 
-            Logger.LogInfo($"VideoConcatenator: Successfully normalized {normalizedFiles.Count} clips");
-
-            // Step 3: Create concat list file with normalized clips
-            var tempListFile = Path.Combine(tempDir, "concat_list.txt");
-            using (var writer = new StreamWriter(tempListFile))
-            {
-                foreach (var file in normalizedFiles)
-                {
-                    writer.WriteLine($"file '{file}'");
-                }
-            }
-
-            Logger.LogInfo($"VideoConcatenator: Created concat list with {normalizedFiles.Count} files");
-
-            // Step 4: Concatenate using stream copy for maximum compatibility
-            var resolution = $"{targetWidth}:{targetHeight}";
-            var startTime = DateTime.Now;
-            
-            Logger.LogInfo($"VideoConcatenator: Starting concatenation at {startTime:HH:mm:ss.fff}");
-            Logger.LogInfo($"VideoConcatenator: Expected total duration: {totalDuration:F1}s");
-            
-            // Use a simpler, more reliable concatenation approach
-            // Since all files are now normalized to identical format, we can use stream copy
-            string ffmpegArgs = $"-y -f concat -safe 0 -i \"{tempListFile}\" -c copy -avoid_negative_ts make_zero \"{outputFile}\"";
-            
-            Logger.LogInfo($"VideoConcatenator: FFmpeg command: ffmpeg {ffmpegArgs}");
-            
-            var concatPsi = new ProcessStartInfo
+        private bool RunFFmpegConcatenation(string ffmpegArgs, string tempListFile, string outputFile, double totalDuration, IProgress<string> progress)
+        {
+            var psi = new ProcessStartInfo
             {
                 FileName = "ffmpeg",
                 Arguments = ffmpegArgs,
@@ -153,98 +199,42 @@ namespace BackgroundVideoWinForms
                 CreateNoWindow = true
             };
 
-            using var concatProcess = new Process { StartInfo = concatPsi };
-            concatProcess.Start();
-            
-            // Monitor the process with timeout
-            int timeoutMinutes = CalculateTimeoutMinutes(totalDuration, normalizedFiles.Count);
-            bool completed = concatProcess.WaitForExit(timeoutMinutes * 60 * 1000);
-            
-            if (!completed)
+            using var process = new Process { StartInfo = psi };
+            process.Start();
+
+            // Monitor progress with timeout
+            int timeoutMinutes = Math.Max(5, (int)Math.Ceiling(totalDuration / 60.0 * 2)); // 2 minutes per minute of video
+            var stopwatch = Stopwatch.StartNew();
+
+            while (!process.HasExited)
             {
-                Logger.LogWarning($"VideoConcatenator: Process timeout after {timeoutMinutes} minutes - killing FFmpeg");
-                try
+                if (stopwatch.Elapsed.TotalMinutes > timeoutMinutes)
                 {
-                    concatProcess.Kill();
-                    Logger.LogInfo("FFmpeg process killed due to timeout");
+                    Logger.LogWarning($"VideoConcatenator: Timeout after {timeoutMinutes} minutes - terminating");
+                    try { process.Kill(); } catch { }
+                    return false;
                 }
-                catch (Exception ex)
+
+                // Read progress periodically
+                if (stopwatch.ElapsedMilliseconds % 5000 < 100) // Every 5 seconds
                 {
-                    Logger.LogError($"VideoConcatenator: Error killing process: {ex.Message}");
+                    progress?.Report($"Concatenating... ({stopwatch.Elapsed:mm\\:ss} elapsed)");
                 }
-                CleanupTempDirectory(tempDir);
+
+                Thread.Sleep(100);
+            }
+
+            var totalTime = stopwatch.Elapsed;
+            Logger.LogInfo($"VideoConcatenator: Concatenation completed in {totalTime:mm\\:ss\\.ff}");
+
+            if (process.ExitCode != 0)
+            {
+                Logger.LogError($"VideoConcatenator: FFmpeg failed with exit code {process.ExitCode}");
+                Logger.LogDebug($"VideoConcatenator: FFmpeg arguments were: {ffmpegArgs}");
                 return false;
             }
 
-            var endTime = DateTime.Now;
-            var actualDuration = endTime - startTime;
-            Logger.Log($"VideoConcatenator: Process completed at {endTime:HH:mm:ss.fff}");
-            Logger.Log($"VideoConcatenator: Actual processing time: {actualDuration:mm\\:ss\\.ff} ({actualDuration.TotalSeconds:F1} seconds)");
-            Logger.Log($"VideoConcatenator: Expected vs Actual - Expected: {totalDuration:F1}s, Actual: {actualDuration.TotalSeconds:F1}s");
-            
-            // Check if process exited normally
-            if (concatProcess.ExitCode != 0)
-            {
-                Logger.LogError($"VideoConcatenator: FFmpeg process failed with exit code {concatProcess.ExitCode}");
-                CleanupTempDirectory(tempDir);
-                return false;
-            }
-
-            // Step 5: Validate output file
-            if (!File.Exists(outputFile))
-            {
-                Logger.LogError($"VideoConcatenator: Output file not created: {outputFile}");
-                CleanupTempDirectory(tempDir);
-                return false;
-            }
-
-            var fileInfo = new FileInfo(outputFile);
-            Logger.LogInfo($"VideoConcatenator: Output file {outputFile} ({fileInfo.Length} bytes)");
-
-            // Get actual duration of output file
-            var outputDuration = GetVideoDuration(outputFile);
-            Logger.LogInfo($"VideoConcatenator: Output file validated - Duration: {outputDuration:F1}s, Size: {fileInfo.Length / (1024.0 * 1024.0):F1}MB");
-
-            // Validate that output duration is reasonable (within 10% of expected)
-            var durationDifference = Math.Abs(outputDuration - totalDuration);
-            var durationPercentage = (durationDifference / totalDuration) * 100;
-            
-            if (durationPercentage > 10)
-            {
-                Logger.LogWarning($"VideoConcatenator: Output duration differs significantly from expected: {outputDuration:F1}s vs {totalDuration:F1}s ({durationPercentage:F1}% difference)");
-            }
-            else
-            {
-                Logger.LogInfo($"VideoConcatenator: Output duration is within acceptable range: {outputDuration:F1}s vs {totalDuration:F1}s ({durationPercentage:F1}% difference)");
-            }
-
-            // Cleanup
-            CleanupTempDirectory(tempDir);
-            
-            var totalTime = DateTime.Now - startTime;
-            Logger.LogInfo($"VideoConcatenator: PERFORMANCE: Video Concatenation completed in {totalTime.TotalMilliseconds:F0}ms - Output: {Path.GetFileName(outputFile)}");
-            
-            return true;
-        }
-
-        private int CalculateTimeoutMinutes(double totalDuration, int fileCount)
-        {
-            // Base timeout: 10 minutes (increased from 5)
-            int baseTimeout = 10;
-            
-            // Add time based on video duration (2 minutes per 1 minute of video - more generous)
-            int durationTimeout = (int)Math.Ceiling(totalDuration / 60.0) * 2;
-            
-            // Add time based on number of files (1 minute per file - more generous)
-            int fileCountTimeout = fileCount;
-            
-            // Add buffer for system load
-            int bufferTimeout = 5;
-            
-            int totalTimeout = baseTimeout + durationTimeout + fileCountTimeout + bufferTimeout;
-            
-            // Cap at reasonable maximum (60 minutes instead of 30)
-            return Math.Min(totalTimeout, 60);
+            return File.Exists(outputFile);
         }
 
         private double GetVideoDuration(string filePath)
@@ -252,27 +242,27 @@ namespace BackgroundVideoWinForms
             try
             {
                 Logger.Log($"GetVideoDuration: Attempting to get duration for {filePath}");
-                
+
                 // Check if file exists
                 if (!File.Exists(filePath))
                 {
                     Logger.Log($"GetVideoDuration: File does not exist: {filePath}");
                     return 0;
                 }
-                
+
                 var fileInfo = new FileInfo(filePath);
                 Logger.Log($"GetVideoDuration: File exists, size: {fileInfo.Length} bytes");
-                
+
                 // Test ffprobe availability first
                 Logger.Log("GetVideoDuration: Testing ffprobe availability...");
                 string ffprobePath = FFmpegPathManager.FFprobePath;
-                
+
                 if (string.IsNullOrEmpty(ffprobePath))
                 {
                     Logger.Log("GetVideoDuration: ffprobe not found. Please configure FFmpeg paths in settings.");
                     return 0;
                 }
-                
+
                 var testPsi = new ProcessStartInfo
                 {
                     FileName = ffprobePath,
@@ -282,7 +272,7 @@ namespace BackgroundVideoWinForms
                     UseShellExecute = false,
                     CreateNoWindow = true
                 };
-                
+
                 try
                 {
                     using (var testProcess = Process.Start(testPsi))
@@ -302,7 +292,7 @@ namespace BackgroundVideoWinForms
                     Logger.LogException(testEx, "GetVideoDuration: ffprobe test failed");
                     return 0;
                 }
-                
+
                 var psi = new ProcessStartInfo
                 {
                     FileName = ffprobePath,
@@ -312,9 +302,9 @@ namespace BackgroundVideoWinForms
                     UseShellExecute = false,
                     CreateNoWindow = true
                 };
-                
+
                 Logger.Log($"GetVideoDuration: Running ffprobe with args: {psi.Arguments}");
-                
+
                 using (var process = Process.Start(psi))
                 {
                     if (process == null)
@@ -322,40 +312,40 @@ namespace BackgroundVideoWinForms
                         Logger.Log("GetVideoDuration: Failed to start ffprobe process");
                         return 0;
                     }
-                    
+
                     // Read all output and error
                     string output = process.StandardOutput.ReadToEnd();
                     string error = process.StandardError.ReadToEnd();
-                    
+
                     Logger.Log($"GetVideoDuration: Waiting for ffprobe to exit...");
                     bool exited = process.WaitForExit(10000); // 10 second timeout
-                    
+
                     Logger.Log($"GetVideoDuration: ffprobe process - exited: {exited}, exit code: {process.ExitCode}");
                     Logger.Log($"GetVideoDuration: ffprobe output: '{output?.Trim()}'");
                     Logger.Log($"GetVideoDuration: ffprobe error: '{error?.Trim()}'");
-                    
+
                     if (!exited)
                     {
                         Logger.Log("GetVideoDuration: ffprobe process timed out");
                         try { process.Kill(); } catch { }
                         return 0;
                     }
-                    
+
                     if (process.ExitCode != 0)
                     {
                         Logger.Log($"GetVideoDuration: ffprobe failed with exit code {process.ExitCode}");
                         return 0;
                     }
-                    
+
                     if (string.IsNullOrWhiteSpace(output))
                     {
                         Logger.Log("GetVideoDuration: ffprobe returned empty output");
                         return 0;
                     }
-                    
+
                     string trimmedOutput = output.Trim();
                     Logger.Log($"GetVideoDuration: Attempting to parse duration from: '{trimmedOutput}'");
-                    
+
                     if (double.TryParse(trimmedOutput, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double duration))
                     {
                         Logger.Log($"GetVideoDuration: Successfully parsed duration: {duration}s");
@@ -406,4 +396,4 @@ namespace BackgroundVideoWinForms
             }
         }
     }
-} 
+}

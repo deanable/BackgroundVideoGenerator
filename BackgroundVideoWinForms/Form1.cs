@@ -25,10 +25,8 @@ namespace BackgroundVideoWinForms
         private CancellationTokenSource cancellationTokenSource;
         private bool isProcessing = false;
         
-        // FFmpeg progress tracking
-        private long currentFrame = 0;
+        // Progress tracking
         private double totalDuration = 0;
-        private double currentTime = 0;
 
         public Form1()
         {
@@ -118,9 +116,7 @@ namespace BackgroundVideoWinForms
             isProcessing = true;
             
             // Reset progress tracking variables
-            currentFrame = 0;
             totalDuration = 0;
-            currentTime = 0;
             Logger.LogDebug("Reset progress tracking variables for new encoding session");
             
             // Update UI
@@ -155,6 +151,9 @@ namespace BackgroundVideoWinForms
             progressBar.Style = ProgressBarStyle.Marquee;
             labelStatus.Text = "Searching Pexels...";
             buttonStart.Enabled = false;
+
+            List<string> downloadedFiles = null;
+            string outputFilePath = string.Empty;
 
             try
             {
@@ -205,7 +204,7 @@ namespace BackgroundVideoWinForms
                 progressBar.Value = 0;
                 
                 var downloadNormalizeStopwatch = Stopwatch.StartNew();
-                var downloadedFiles = await DownloadAndNormalizeClipsAsync(clips, duration, resolution, cancellationTokenSource.Token);
+                downloadedFiles = await DownloadAndNormalizeClipsAsync(clips, duration, resolution, cancellationTokenSource.Token);
                 downloadNormalizeStopwatch.Stop();
                 Logger.LogPerformance("Download and Normalize", downloadNormalizeStopwatch.Elapsed, $"Processed {downloadedFiles.Count} files");
                 
@@ -229,7 +228,7 @@ namespace BackgroundVideoWinForms
                 var concatStopwatch = new System.Diagnostics.Stopwatch();
                 concatStopwatch.Start();
                 string safeSearchTerm = string.Join("_", searchTerm.Split(Path.GetInvalidFileNameChars()));
-                string outputFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"{safeSearchTerm}_{System.DateTime.Now:yyyyMMddHHmmss}.mp4");
+                outputFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"{safeSearchTerm}_{System.DateTime.Now:yyyyMMddHHmmss}.mp4");
                 
                 // Calculate total duration for progress tracking
                 double totalVideoDuration = 0;
@@ -273,32 +272,27 @@ namespace BackgroundVideoWinForms
                 }
                 
                 bool concatenationCancelled = false;
-                bool concatenationSuccess = false;
-                await Task.Run(() => {
-                    concatenationSuccess = videoConcatenator.ConcatenateVideos(downloadedFiles, outputFile, targetWidth, targetHeight, (progress) => {
-                        // Check for cancellation
-                        if (cancellationTokenSource?.Token.IsCancellationRequested == true)
-                        {
-                            concatenationCancelled = true;
-                            return;
-                        }
-                        
-                        // Parse FFmpeg progress output
-                        ParseFFmpegProgress(progress);
-                    });
+                UpdateProgress("High-speed concatenation in progress...", 0);
+                var concatenationProgress = new Progress<string>(status => {
+                    this.BeginInvoke((Action)(() => {
+                        labelStatus.Text = status;
+                        Logger.LogDebug($"Concatenation: {status}");
+                    }));
                 });
-                
+
+                bool concatenationSuccess = await VideoConcatenator.ConcatenateVideosAsync(downloadedFiles, outputFilePath, targetWidth, targetHeight, concatenationProgress);
+
                 // Check if concatenation was cancelled or failed
                 if (concatenationCancelled)
                 {
                     cancellationTokenSource?.Token.ThrowIfCancellationRequested();
                 }
-                
+
                 if (!concatenationSuccess)
                 {
                     throw new Exception("Video concatenation failed");
                 }
-                
+
                 // Set progress to 100% when concatenation is actually complete
                 this.BeginInvoke((Action)(() =>
                 {
@@ -307,13 +301,13 @@ namespace BackgroundVideoWinForms
                     Logger.LogInfo("Video concatenation completed - progress bar set to 100%");
                 }));
                 concatStopwatch.Stop();
-                Logger.LogPerformance("Video Concatenation", concatStopwatch.Elapsed, $"Output: {Path.GetFileName(outputFile)}");
+                Logger.LogPerformance("Video Concatenation", concatStopwatch.Elapsed, $"Output: {Path.GetFileName(outputFilePath)}");
                 
                 // Log final file information
-                if (File.Exists(outputFile))
+                if (File.Exists(outputFilePath))
                 {
-                    var fileInfo = new FileInfo(outputFile);
-                    Logger.LogFileOperation("Final Video Created", outputFile, fileInfo.Length);
+                    var fileInfo = new FileInfo(outputFilePath);
+                    Logger.LogFileOperation("Final Video Created", outputFilePath, fileInfo.Length);
                 }
 
                 // Comprehensive cleanup of all temp files
@@ -368,23 +362,23 @@ namespace BackgroundVideoWinForms
 
                 progressBar.Style = ProgressBarStyle.Blocks;
                 progressBar.Value = progressBar.Maximum;
-                labelStatus.Text = $"Done! Saved to {outputFile}";
+                labelStatus.Text = $"Done! Saved to {outputFilePath}";
                 buttonStart.Enabled = true;
 
                 pipelineStopwatch.Stop();
-                Logger.LogPerformance("Complete Pipeline", pipelineStopwatch.Elapsed, $"Output: {Path.GetFileName(outputFile)}");
-                Logger.LogPipelineStep("Pipeline Success", $"Video generation completed successfully. Output: {outputFile}");
+                Logger.LogPerformance("Complete Pipeline", pipelineStopwatch.Elapsed, $"Output: {Path.GetFileName(outputFilePath)}");
+                Logger.LogPipelineStep("Pipeline Success", $"Video generation completed successfully. Output: {outputFilePath}");
                 Logger.LogMemoryUsage();
 
                 // Open the folder containing the output file (robust for .NET Core)
                 try
                 {
-                    if (File.Exists(outputFile))
+                    if (File.Exists(outputFilePath))
                     {
                         var psi = new ProcessStartInfo
                         {
                             FileName = "explorer.exe",
-                            Arguments = $"/select,\"{outputFile}\"",
+                            Arguments = $"/select,\"{outputFilePath}\"",
                             UseShellExecute = true
                         };
                         Process.Start(psi);
@@ -460,9 +454,7 @@ namespace BackgroundVideoWinForms
             progressBar.Value = 0;
             
             // Reset progress tracking
-            currentFrame = 0;
             totalDuration = 0;
-            currentTime = 0;
             
             if (cancellationTokenSource != null)
             {
@@ -523,94 +515,6 @@ namespace BackgroundVideoWinForms
             }
         }
 
-        private void ParseFFmpegProgress(string line)
-        {
-            try
-            {
-                // Only process lines that contain progress information
-                if (!line.Contains("frame=") || !line.Contains("time="))
-                    return;
-                
-                // Parse FFmpeg progress line: frame=114037 fps=736 q=29.0 size=88576KiB time=01:03:21.16 bitrate=190.9kbits/s dup=529620 drop=0 speed=24.5x elapsed=0:02:34.83
-                var frameMatch = System.Text.RegularExpressions.Regex.Match(line, @"frame=(\d+)");
-                // Improved time regex to handle various time formats including MM:SS.SS
-                var timeMatch = System.Text.RegularExpressions.Regex.Match(line, @"time=(\d+):(\d+):(\d+\.?\d*)");
-                var speedMatch = System.Text.RegularExpressions.Regex.Match(line, @"speed=(\d+\.?\d*)x");
-                
-                if (timeMatch.Success)
-                {
-                    int hours = int.Parse(timeMatch.Groups[1].Value);
-                    int minutes = int.Parse(timeMatch.Groups[2].Value);
-                    
-                    // More robust seconds parsing to handle decimal seconds properly
-                    string secondsStr = timeMatch.Groups[3].Value;
-                    if (!double.TryParse(secondsStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double seconds))
-                    {
-                        Logger.LogDebug($"Failed to parse seconds from '{secondsStr}' in time string");
-                        return;
-                    }
-                    
-                    currentTime = hours * 3600 + minutes * 60 + seconds;
-                    
-                    // Update frame count for logging purposes only
-                    if (frameMatch.Success)
-                    {
-                        currentFrame = long.Parse(frameMatch.Groups[1].Value);
-                    }
-                    
-                    // Use time-based progress calculation for accuracy
-                    if (totalDuration > 0)
-                    {
-                        double rawProgressPercent = (currentTime / totalDuration) * 100.0;
-                        double progressPercent = Math.Min(95.0, rawProgressPercent);
-                        int progressValue = (int)Math.Round(progressPercent);
-                        
-                        this.BeginInvoke((Action)(() =>
-                        {
-                            progressBar.Value = Math.Min(progressValue, progressBar.Maximum);
-                            string speed = speedMatch.Success ? $" ({speedMatch.Groups[1].Value}x)" : "";
-                            string timeDisplay = $"{hours:D2}:{minutes:D2}:{seconds:F1}";
-                            
-                            // Show time-based progress
-                            if (rawProgressPercent >= 95.0)
-                            {
-                                labelStatus.Text = $"Encoding: Finalizing... {timeDisplay}{speed}";
-                            }
-                            else
-                            {
-                                labelStatus.Text = $"Encoding: {progressPercent:F1}% - {timeDisplay}{speed}";
-                            }
-                            
-                            // Log progress updates (less verbose)
-                            if (frameMatch.Success && currentFrame % 1000 == 0) // Log every 1000 frames
-                            {
-                                Logger.LogDebug($"Progress: {progressPercent:F1}% at {timeDisplay} ({currentFrame:N0} frames){speed}");
-                            }
-                        }));
-                    }
-                    else
-                    {
-                        // Basic progress display without percentage
-                        this.BeginInvoke((Action)(() =>
-                        {
-                            string speed = speedMatch.Success ? $" ({speedMatch.Groups[1].Value}x)" : "";
-                            string timeDisplay = $"{hours:D2}:{minutes:D2}:{seconds:F1}";
-                            labelStatus.Text = $"Encoding: {timeDisplay}{speed}";
-                            
-                            // Update progress bar based on elapsed time even without total duration
-                            // Use a more conservative estimate to avoid jumping to 100% too early
-                            double estimatedProgress = Math.Min(90.0, (currentTime / 600.0) * 100.0); // Assume 10 minutes max, cap at 90%
-                            int progressValue = (int)Math.Round(estimatedProgress);
-                            progressBar.Value = Math.Min(progressValue, progressBar.Maximum);
-                        }));
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogDebug($"Error parsing FFmpeg progress: {ex.Message}");
-            }
-        }
 
         private void SetTotalDuration(double duration)
         {
@@ -636,10 +540,7 @@ namespace BackgroundVideoWinForms
                 Logger.LogInfo($"Total duration set successfully: {duration:F2}s - progress bar will show accurate percentage");
             }
             
-            // Reset current time counter to prevent accumulation issues
-            currentTime = 0;
-            currentFrame = 0;
-            Logger.LogDebug($"Reset current time and frame counters to 0");
+            Logger.LogDebug($"Reset progress tracking");
         }
 
         private double GetVideoDuration(string filePath)
@@ -1246,57 +1147,6 @@ namespace BackgroundVideoWinForms
             return (0, 0);
         }
 
-        // Helper: Concatenate videos using FFmpeg (no audio, selected resolution)
-        private void ConcatenateVideos(List<string> videoFiles, string outputFile, string resolution)
-        {
-            if (videoFiles == null || videoFiles.Count == 0)
-                return;
-            string tempListFile = Path.Combine(Path.GetTempPath(), $"pexels_concat_{Guid.NewGuid()}.txt");
-            using (var sw = new StreamWriter(tempListFile))
-            {
-                foreach (var file in videoFiles)
-                {
-                    sw.WriteLine($"file '{file.Replace("'", "'\\''")}'");
-                }
-            }
-            string ffmpegArgs = $"-y -f concat -safe 0 -i \"{tempListFile}\" -vf scale={resolution} -c:v libx264 -preset fast -crf 23 -an \"{outputFile}\"";
-            RunFfmpeg(ffmpegArgs);
-            try { File.Delete(tempListFile); } catch { }
-        }
-
-        // Helper class for Pexels video clip info
-        private void RunFfmpeg(string arguments)
-        {
-            var psi = new ProcessStartInfo
-            {
-                FileName = "ffmpeg",
-                Arguments = arguments,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-            using (var process = new Process { StartInfo = psi })
-            {
-                process.ErrorDataReceived += (s, e) =>
-                {
-                    if (e.Data != null)
-                    {
-                        // Parse ffmpeg progress
-                        var match = Regex.Match(e.Data, @"time=([0-9:.]+)");
-                        if (match.Success)
-                        {
-                            this.BeginInvoke((Action)(() =>
-                            {
-                                labelStatus.Text = $"Rendering... {match.Groups[1].Value}";
-                            }));
-                        }
-                    }
-                };
-                process.Start();
-                process.BeginErrorReadLine();
-                process.WaitForExit();
-            }
-        }
 
         /// <summary>
         /// Deletes a file with multiple retry attempts and better error handling
@@ -1382,6 +1232,39 @@ namespace BackgroundVideoWinForms
         /// <summary>
         /// Performs additional cleanup for any remaining files and handles
         /// </summary>
+        private void UpdateProgress(string message, int value)
+        {
+            if (progressBar.InvokeRequired)
+            {
+                progressBar.Invoke(new Action(() => UpdateProgress(message, value)));
+            }
+            else
+            {
+                labelStatus.Text = message;
+                if (value >= 0)
+                {
+                    progressBar.Style = ProgressBarStyle.Continuous;
+                    progressBar.Value = value;
+                }
+                else
+                {
+                    // Try to parse progress from message
+                    var match = System.Text.RegularExpressions.Regex.Match(message, "(\\d+)/(\\d+)");
+                    if (match.Success)
+                    {
+                        int current = int.Parse(match.Groups[1].Value);
+                        int total = int.Parse(match.Groups[2].Value);
+                        progressBar.Style = ProgressBarStyle.Continuous;
+                        progressBar.Value = (int)((double)current / total * 100);
+                    }
+                    else
+                    {
+                        progressBar.Style = ProgressBarStyle.Marquee;
+                    }
+                }
+            }
+        }
+
         private void CleanupRemainingFiles()
         {
             try
